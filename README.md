@@ -159,3 +159,6 @@ Pensado para [Vercel](https://vercel.com) sin configuración adicional: importa 
 3. **Comenzar torneo** → registra los marcadores en *Resumen* o *Calendario/Partidos*.
 4. Sigue la tabla o las llaves, las estadísticas y usa *Proyección* en una pantalla grande.
 5. Al terminar: celebración, historial y ranking histórico. *Revancha* reutiliza los jugadores.
+
+
+Awo

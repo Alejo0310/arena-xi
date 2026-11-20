@@ -4,6 +4,8 @@ Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sort
 
 > Proyecto no oficial, sin relación con Electronic Arts. Las insignias de los equipos son ilustraciones propias con los colores de cada club; no se reproducen escudos oficiales.
 
+**🌐 Demo en producción:** https://fc-tournament-manager.vercel.app
+
 ## Características
 
 **Configuración del torneo**

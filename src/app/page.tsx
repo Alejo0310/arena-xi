@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { ArrowRight, Disc3, Mail, Dices, LayoutGrid, Layers, Play, Plus, RotateCcw, Trophy, Users } from "lucide-react";
+import { ArrowRight, Play, Plus, RotateCcw, Trophy, Users } from "lucide-react";
 import { useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
 import { useHydrated } from "@/components/ui/bits";
@@ -12,14 +12,7 @@ import { TeamCrest } from "@/components/ui/TeamCrest";
 import { TEAMS, fmtRating } from "@/lib/teams";
 import { phaseHref, PHASE_LABEL } from "@/lib/routes";
 import { HeroVisual } from "@/components/hero/HeroVisual";
-
-const MODES = [
-  { icon: Disc3, name: "Ruleta", text: "La rueda gira, frena y anuncia tu club." },
-  { icon: Mail, name: "Sobres", text: "Cartas misteriosas que se abren con estilo." },
-  { icon: Dices, name: "Tómbola", text: "Bolas en el bombo y salida cinematográfica." },
-  { icon: Layers, name: "Draft", text: "Tres opciones al azar, tú decides." },
-  { icon: LayoutGrid, name: "Bombos", text: "Equipos del mismo nivel para un duelo justo." },
-];
+import { DrawSimulations } from "@/components/home/DrawSimulations";
 
 export default function HomePage() {
   const hydrated = useHydrated();
@@ -129,28 +122,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section>
-        <div className="kicker mb-2">La estrella del show</div>
-        <h2 className="display mb-6 text-4xl font-extrabold">5 formas de sortear equipos</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {MODES.map((m, i) => (
-            <motion.div
-              key={m.name}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.07 }}
-              whileHover={{ y: -6 }}
-              className="glass glass-hover group relative overflow-hidden p-5"
-            >
-              <div className="absolute inset-y-0 -left-1/2 w-1/3 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:animate-sweep group-hover:opacity-100" />
-              <m.icon className="size-8 text-neon" />
-              <h3 className="display mt-4 text-2xl font-bold">{m.name}</h3>
-              <p className="mt-1 text-sm text-soft">{m.text}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+      <DrawSimulations />
 
       <section className="grid gap-4 md:grid-cols-3">
         {[

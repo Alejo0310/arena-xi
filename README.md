@@ -2,7 +2,7 @@
 
 **Que gane el mejor.**
 
-Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sorteos de equipos animados, ligas y eliminatorias de clubes o selecciones, resultados, tablas, llaves y estadísticas.
+Aplicación web para organizar torneos de **EA SPORTS FC 25, FC 26 y FC 27** entre amigos: sorteos de equipos animados, ligas y eliminatorias de clubes o selecciones, resultados, tablas, llaves y estadísticas.
 
 > Proyecto no oficial, sin relación con Electronic Arts. Las insignias de los clubes y las banderas de las selecciones son ilustraciones propias; no se reproducen escudos oficiales.
 
@@ -66,6 +66,17 @@ READY ─START─▶ SPINNING ─fin de animación─▶ REVEALING ─fin de rev
 - Enlace para compartir una instantánea de solo lectura (datos comprimidos en el fragmento `#` de la URL; no pasan por ningún servidor).
 - Modo proyección para pantalla grande, sincronizado con la pestaña de administración.
 - Pantalla completa, sonidos sintetizados opcionales (desactivados por defecto) y respeto de `prefers-reduced-motion`.
+
+## Multiversión: FC 25, FC 26 y FC 27
+
+- Paso **SELECCIONA TU FC** al configurar el torneo. Cada edición tiene su **catálogo aislado** de clubes y selecciones, masculinos y femeninos (cuatro categorías), cargado bajo demanda desde `src/data/catalogs/fcXX.json`.
+- Reglas: un torneo usa **una edición** y **una categoría**; no se mezclan ediciones, clubes/selecciones ni masculinos/femeninos (`src/lib/category.ts`, validado en store, sorteo y motor).
+- **Instantáneas**: cada torneo guarda los datos de sus equipos (`snapshot`), así que actualizar un catálogo no altera torneos históricos. Los torneos antiguos se migran como FC 25 masculino.
+- **Valoraciones**: solo existen verificadas para los 36 equipos principales de FC 25. En FC 26 y FC 27 se muestran como “—” (no se inventan); los bombos exigen valoraciones.
+- Licencias (licenciado / genérico / sin verificar) y etiquetas “Nuevo en FC xx” solo donde una fuente lo respalda. Las selecciones ausentes aparecen en “Selecciones no disponibles” y no se pueden sortear.
+- Fuentes: [FIFPlay](https://www.fifplay.com/) (listas, país y liga), [FIFAUTeam](https://fifauteam.com/) (licencias y novedades) y FIFA Index/ReFIFA/SoFIFA/FIFACM (valoraciones FC 25). FIFA Index y SoFIFA bloquean el acceso automatizado. Los catálogos se regeneran con `scripts/parse-fifplay.py` y `scripts/build-catalogs.py`.
+- **Simulaciones** de las 5 modalidades en el Home (independientes de los torneos reales), página `/acerca` y **footer** con enlaces a funcionalidades existentes.
+- Pruebas: `npm test` (Vitest, pool `vmThreads`) y `npm run e2e`.
 
 ## Clubes y selecciones
 

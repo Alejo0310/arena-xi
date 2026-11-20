@@ -93,6 +93,6 @@ test("identidad ARENA XI y páginas secundarias", async ({ page }) => {
   await shot(page, "home");
   await page.goto("/equipos");
   await expect(page).toHaveTitle(/Equipos.*ARENA XI/);
-  await page.getByPlaceholder("Buscar club...").fill("lombardia");
+  await page.getByPlaceholder(/Buscar club/).fill("lombardia");
   await expect(page.getByText("Inter de Milán", { exact: false })).toBeVisible();
 });

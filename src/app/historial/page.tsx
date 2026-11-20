@@ -41,7 +41,7 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-12">
-      <section>
+      <section id="campeones" className="scroll-mt-24">
         <SectionHeader kicker="Salón de la fama" title="Ranking histórico" />
         {ranking.length === 0 ? (
           <EmptyState icon={<Crown className="size-8" />} title="Sin torneos finalizados" body="Cuando termine tu primer torneo, aquí se acumularán títulos, podios y estadísticas de cada jugador (se agrupan por nombre)." />

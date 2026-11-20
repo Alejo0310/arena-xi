@@ -9,6 +9,7 @@ import { useTournament } from "@/store/tournament";
 import { ConfirmHost, Toaster } from "@/components/ui/feedback";
 import { BackgroundFX } from "./BackgroundFX";
 import { Logo, Wordmark } from "./Logo";
+import { Footer } from "./Footer";
 import { useHydrated } from "@/components/ui/bits";
 
 const NAV = [
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {children}
       </motion.main>
+      {!bare && <Footer />}
       <Toaster />
       <ConfirmHost />
     </MotionConfig>

@@ -5,10 +5,11 @@ import type { GameEdition } from "@/lib/types";
 import { annotateMissing, getCatalogSync, loadCatalog, type Catalog } from "@/lib/catalog";
 
 /** Carga (una sola vez por edición) el catálogo de equipos y lo expone al componente. */
-export function useCatalog(edition: GameEdition): { catalog: Catalog | undefined; loading: boolean; error: boolean } {
+export function useCatalog(edition: GameEdition, enabled = true): { catalog: Catalog | undefined; loading: boolean; error: boolean } {
   const [state, setState] = useState<{ edition: GameEdition; catalog?: Catalog; error?: boolean }>(() => ({ edition, catalog: getCatalogSync(edition) }));
 
   useEffect(() => {
+    if (!enabled) return;
     let off = false;
     const hit = getCatalogSync(edition);
     if (hit) {
@@ -22,11 +23,11 @@ export function useCatalog(edition: GameEdition): { catalog: Catalog | undefined
     return () => {
       off = true;
     };
-  }, [edition]);
+  }, [edition, enabled]);
 
   // Mientras llega el catálogo de la nueva edición no se muestran los datos de la anterior.
   const fresh = state.edition === edition;
-  return { catalog: fresh ? state.catalog : undefined, loading: !fresh || (!state.catalog && !state.error), error: fresh && !!state.error };
+  return { catalog: fresh && enabled ? state.catalog : undefined, loading: enabled && (!fresh || (!state.catalog && !state.error)), error: fresh && !!state.error };
 }
 
 /** Carga las tres ediciones para saber en cuáles existe cada selección ausente. */

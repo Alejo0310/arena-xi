@@ -120,10 +120,10 @@ test.describe("categorías", () => {
     await chooseMode(page, "Ruleta");
     await playTurn(page, "Ruleta", 1, 4);
     await page.goto("/nuevo");
-    await page.getByRole("tab", { name: /Selecciones/ }).click();
+    await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
     await expect(page.getByRole("alertdialog")).toContainText(/no se pueden mezclar/i);
     await confirm(page);
-    await expect(page.getByRole("tab", { name: /Selecciones/ })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: /Selecciones masculinas/ })).toHaveAttribute("aria-selected", "true");
     await shot(page, "setup-nationals");
     await page.getByRole("button", { name: /Ir al sorteo/ }).click();
     // El sorteo anterior se descartó: vuelve a la elección de modalidad.
@@ -134,7 +134,7 @@ test.describe("categorías", () => {
     await page.goto("/equipos");
     await expect(page.locator("[data-team='real-madrid']")).toBeVisible();
     await expect(page.locator("[data-team='nat-france']")).toHaveCount(0);
-    await page.getByRole("tab", { name: /Selecciones/ }).click();
+    await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
     await expect(page.locator("[data-team='nat-france']")).toBeVisible();
     await expect(page.locator("[data-team='real-madrid']")).toHaveCount(0);
     await expect(page.locator("[data-team^='nat-']")).toHaveCount(10);

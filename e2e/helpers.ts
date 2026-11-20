@@ -25,7 +25,7 @@ export async function setup(page: Page, names: string[], opts: { format?: "Liga"
   await input.press("Enter");
   for (const n of names) await expect(page.getByRole("button", { name: `Eliminar ${n}` })).toBeVisible();
   if (opts.format) await page.getByRole("button", { name: new RegExp(`^${opts.format}`) }).click();
-  if (opts.category === "Selecciones") await page.getByRole("tab", { name: /Selecciones/ }).click();
+  if (opts.category === "Selecciones") await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
   await page.getByRole("button", { name: /Ir al sorteo/ }).click();
   await expect(page).toHaveURL(/\/sorteo/);
 }

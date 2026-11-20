@@ -21,6 +21,11 @@ export default function TournamentPage() {
   const newTournament = useTournament((s) => s.newTournament);
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("overview");
+  // Enlaces profundos (p. ej. desde el footer): /torneo?tab=table
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("tab");
+    if (q === "overview" || q === "matches" || q === "table" || q === "stats") setTab(q);
+  }, []);
   const [celebrate, setCelebrate] = useState(false);
   const [menu, setMenu] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);

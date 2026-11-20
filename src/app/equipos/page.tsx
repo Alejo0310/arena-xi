@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { CATEGORIES } from "@/lib/editions";
 import { TeamBrowser } from "@/components/teams/TeamBrowser";
 import { useCategoryChange } from "@/components/teams/useCategoryChange";
 import { SectionHeader, useHydrated } from "@/components/ui/bits";
@@ -14,6 +15,15 @@ export default function TeamsPage() {
   const setPool = useTournament((s) => s.setPool);
   const changeCategory = useCategoryChange();
   const [view, setView] = useState<{ edition: GameEdition; kind: TeamKind; gender: Gender }>({ edition: "FC25", kind: "club", gender: "men" });
+  // Enlaces profundos (p. ej. desde el footer): /equipos?cat=national-women&ed=FC27
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const cat = CATEGORIES.find((c) => c.id === p.get("cat"));
+    const ed = p.get("ed");
+    if (cat || ed === "FC25" || ed === "FC26" || ed === "FC27") {
+      setView((v) => ({ edition: ed === "FC25" || ed === "FC26" || ed === "FC27" ? ed : v.edition, kind: cat?.kind ?? v.kind, gender: cat?.gender ?? v.gender }));
+    }
+  }, []);
   // Solo se seleccionan equipos aquí cuando hay un torneo en configuración; la edición la fija el torneo.
   const editable = hydrated && current && current.phase === "setup";
 

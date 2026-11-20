@@ -1,54 +1,47 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { motion, useAnimate } from "motion/react";
 import { getTeam } from "@/lib/teams";
+import { prefersReducedMotion } from "@/lib/fx";
+import { play } from "@/lib/sound";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { RatingBar } from "@/components/ui/bits";
-import type { StageProps } from "./types";
+import { useSpinAnimation, type StageProps } from "./types";
 
 /** Draft: se reparten opciones al azar y el participante elige una carta. */
-export function Draft({ options, decide, onRevealed, busy }: Omit<StageProps, "pool"> & { options: string[] }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  // Congela las cartas mientras se anima la elección (el store ya repartió las siguientes).
-  const [frozen, setFrozen] = useState<string[] | null>(null);
-  const shown = frozen ?? options;
+export default function Draft(props: StageProps & { options: string[] }) {
+  const { options, locked, onStart } = props;
+  const [scope, animate] = useAnimate<HTMLDivElement>();
 
-  const choose = (teamId: string) => {
-    if (busy || picked) return;
-    const r = decide({ teamId });
-    if (!r) return;
-    setFrozen(options);
-    setPicked(teamId);
-    setTimeout(() => {
-      onRevealed(r);
-      setPicked(null);
-      setFrozen(null);
-    }, 900);
-  };
+  useSpinAnimation(props, async (p) => {
+    const root = scope.current;
+    if (!root) return;
+    const reduced = prefersReducedMotion();
+    const chosen = root.querySelector<HTMLElement>(`[data-card="${p.teamId}"]`);
+    const others = [...root.querySelectorAll<HTMLElement>("[data-card]")].filter((el) => el !== chosen);
+    play("whoosh");
+    const opts = reduced ? { duration: 0.01 } : { duration: 0.6, ease: [0.3, 0.7, 0.2, 1] as const };
+    await Promise.all([
+      chosen ? animate(chosen, { y: -18, scale: 1.08, borderColor: "#ffd23d" }, opts) : Promise.resolve(),
+      ...others.map((el) => animate(el, { opacity: 0.25, scale: 0.92 }, opts)),
+    ]);
+  });
 
   return (
     <div className="w-full">
-      <p className="mb-6 text-center text-soft">Se han repartido {shown.length} cartas al azar. Elige tu club: las demás vuelven al mazo.</p>
-      <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-4">
-        <AnimatePresence mode="popLayout">
-          {shown.map((id, i) => {
-            const t = getTeam(id)!;
-            const isPicked = picked === id;
-            const dimmed = picked && !isPicked;
-            return (
-              <motion.button
-                key={`${id}-${shown.join()}`}
-                layout
-                onClick={() => choose(id)}
-                disabled={busy || !!picked}
-                initial={{ opacity: 0, y: -80, rotateY: 180, rotate: (i - 1) * 8 }}
-                animate={{ opacity: dimmed ? 0.25 : 1, y: isPicked ? -16 : 0, rotateY: 0, rotate: 0, scale: isPicked ? 1.08 : dimmed ? 0.92 : 1 }}
-                exit={{ opacity: 0, y: 60 }}
-                transition={{ delay: picked ? 0 : 0.15 + i * 0.15, type: "spring", stiffness: 120, damping: 15 }}
-                whileHover={!picked ? { y: -10, rotate: (i - 1) * 2 } : undefined}
-                className="relative w-[200px] overflow-hidden rounded-2xl border-2 p-5 text-left [perspective:800px]"
-                style={{ borderColor: isPicked ? "#ffd23d" : `${t.colors[0]}88`, background: `linear-gradient(160deg, ${t.colors[0]}33, #0b0e13 55%)` }}
+      <p className="mb-6 text-center text-soft">Se han repartido {options.length} cartas al azar. Elige tu equipo: las demás vuelven al mazo.</p>
+      {/* La key de grupo reinicia las cartas en cada reparto. */}
+      <div ref={scope} key={options.join()} className="mx-auto flex max-w-4xl flex-wrap justify-center gap-4">
+        {options.map((id, i) => {
+          const t = getTeam(id)!;
+          return (
+            <motion.div key={id} initial={{ opacity: 0, y: -60, rotate: (i - 1) * 8 }} animate={{ opacity: 1, y: 0, rotate: 0 }} whileHover={locked ? undefined : { y: -8 }} transition={{ delay: 0.1 + i * 0.12, type: "spring", stiffness: 120, damping: 15 }}>
+              <button
+                data-card={id}
+                onClick={() => onStart({ teamId: id })}
+                disabled={locked}
+                className="relative w-[200px] overflow-hidden rounded-2xl border-2 p-5 text-left will-change-transform"
+                style={{ borderColor: `${t.colors[0]}88`, background: `linear-gradient(160deg, ${t.colors[0]}33, #0b0e13 55%)` }}
                 aria-label={`Elegir ${t.name}, media ${t.ovr}`}
               >
                 <div className="flex items-start justify-between">
@@ -65,10 +58,10 @@ export function Draft({ options, decide, onRevealed, busy }: Omit<StageProps, "p
                   <RatingBar label="MED" value={t.mid} color="bg-volt" />
                   <RatingBar label="DEF" value={t.def} color="bg-neon" />
                 </div>
-              </motion.button>
-            );
-          })}
-        </AnimatePresence>
+              </button>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

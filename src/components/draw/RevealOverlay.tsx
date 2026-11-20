@@ -1,12 +1,12 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { motion, useAnimate } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronRight, SkipForward } from "lucide-react";
 import type { Participant, Team } from "@/lib/types";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { PlayerDot, RatingBar } from "@/components/ui/bits";
-import { burst } from "@/lib/fx";
+import { burst, prefersReducedMotion } from "@/lib/fx";
 import { play } from "@/lib/sound";
 
 export interface RevealItem {
@@ -14,138 +14,159 @@ export interface RevealItem {
   team: Team;
 }
 
+interface Props extends RevealItem {
+  /** "revealing": se está animando la revelación; "assigned": esperando confirmación. */
+  stage: "revealing" | "assigned";
+  runId: number;
+  position?: { index: number; total: number };
+  continueLabel: string;
+  onRevealed: (runId: number) => void;
+  onContinue: () => void;
+  onSkip?: () => void;
+}
+
 /**
- * Presentación cinematográfica de uno o varios participantes con su equipo.
- * Con `autoMs` avanza sola (presentación de plantillas / sorteo completo).
+ * Revelación cinematográfica de un participante con su equipo. La animación se
+ * encadena con promesas de Motion y avisa al terminar (`onRevealed`); el botón
+ * Continuar solo existe en el estado "assigned". Sin temporizadores.
  */
-export function RevealOverlay({ items, onClose, autoMs }: { items: RevealItem[]; onClose: () => void; autoMs?: number }) {
-  const [index, setIndex] = useState(0);
-  const [stage, setStage] = useState<"intro" | "reveal">("intro");
-  const item = items[index];
-  const last = index >= items.length - 1;
+export function RevealOverlay({ participant, team, stage, runId, position, continueLabel, onRevealed, onContinue, onSkip }: Props) {
+  const [scope, animate] = useAnimate<HTMLDivElement>();
+  const revealedRef = useRef(onRevealed);
+  revealedRef.current = onRevealed;
+  const [c1, c2] = team.colors;
 
   useEffect(() => {
-    setStage("intro");
-    const t = setTimeout(() => {
-      setStage("reveal");
+    if (stage !== "revealing") return;
+    let cancelled = false;
+    const reduced = prefersReducedMotion();
+    const fast = { duration: 0.01 };
+    (async () => {
       play("reveal");
-      burst([item.team.colors[0], item.team.colors[1], "#3dff8b", "#ffffff"]);
-    }, autoMs ? 650 : 1100);
-    return () => clearTimeout(t);
-  }, [index, item, autoMs]);
-
-  const next = () => (last ? onClose() : setIndex((i) => i + 1));
-
-  useEffect(() => {
-    if (!autoMs || stage !== "reveal") return;
-    const t = setTimeout(next, autoMs);
-    return () => clearTimeout(t);
+      burst([c1, c2, "#3dff8b", "#ffffff"]);
+      await animate("[data-reveal='crest']", { scale: [0, 1], rotateY: [180, 0], opacity: [0, 1] }, reduced ? fast : { type: "spring", stiffness: 140, damping: 13 });
+      await animate("[data-reveal='info']", { opacity: [0, 1], y: [20, 0] }, reduced ? fast : { duration: 0.45 });
+    })().then(
+      () => !cancelled && revealedRef.current(runId),
+      () => !cancelled && revealedRef.current(runId),
+    );
+    return () => {
+      cancelled = true;
+    };
+    // La revelación se identifica por runId (y por participante en presentaciones).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, autoMs, index]);
+  }, [stage, runId, participant.id]);
 
   useEffect(() => {
+    if (stage !== "assigned") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if ((e.key === "Enter" || e.key === " ") && stage === "reveal") {
+      if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        next();
+        onContinue();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, index]);
+  }, [stage, onContinue]);
 
-  const [c1, c2] = item.team.colors;
+  const hidden = stage === "revealing" ? { opacity: 0 } : undefined;
 
   return (
     <motion.div
-      className="fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-ink/95 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-ink/95 p-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       role="dialog"
       aria-modal="true"
-      aria-label={`${item.participant.name} recibe ${item.team.name}`}
-      onClick={() => stage === "reveal" && next()}
+      aria-label={`${participant.name} recibe ${team.name}`}
     >
-      {/* Haces de luz */}
-      <motion.div
-        key={`beams-${index}`}
-        className="pointer-events-none absolute inset-0"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: stage === "reveal" ? 1 : 0.35 }}
-        transition={{ duration: 0.8 }}
-        style={{ background: `radial-gradient(circle at 50% 45%, ${c1}55, transparent 45%), conic-gradient(from 0deg at 50% 45%, transparent, ${c2}22, transparent 12%, ${c1}22, transparent 25%, ${c2}22, transparent 40%)` }}
-      />
-      <motion.div
-        className="pointer-events-none absolute left-1/2 top-[45%] size-[140vmax] -translate-x-1/2 -translate-y-1/2 opacity-30"
-        style={{ background: `repeating-conic-gradient(from 0deg, ${c1}18 0deg 6deg, transparent 6deg 18deg)` }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+      <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(circle at 50% 50%, ${c1}55, transparent 50%)` }} />
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 size-[110vmax] -translate-x-1/2 -translate-y-1/2 animate-[spin_40s_linear_infinite] opacity-25 will-change-transform"
+        style={{ background: `repeating-conic-gradient(from 0deg, ${c1}20 0deg 6deg, transparent 6deg 18deg)` }}
       />
 
-      <div className="relative flex w-full max-w-2xl flex-col items-center text-center">
-        <AnimatePresence mode="wait">
-          <motion.div key={`who-${index}`} initial={{ opacity: 0, y: -30, letterSpacing: "0.6em" }} animate={{ opacity: 1, y: 0, letterSpacing: "0.25em" }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }} className="kicker !text-sm">
-            {items.length > 1 ? `${index + 1} / ${items.length} · ` : ""}Turno de
-          </motion.div>
-        </AnimatePresence>
-        <motion.div key={`name-${index}`} initial={{ opacity: 0, scale: 1.4, filter: "blur(10px)" }} animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }} transition={{ duration: 0.55 }} className="mt-2 flex items-center gap-3">
-          <PlayerDot color={item.participant.color} size={16} />
-          <span className="display text-5xl font-black italic sm:text-7xl">{item.participant.name}</span>
-        </motion.div>
-
-        <div className="mt-8 grid h-[min(56vh,420px)] w-full place-items-center">
-          <AnimatePresence mode="wait">
-            {stage === "intro" ? (
-              <motion.div key="q" className="relative grid size-48 place-items-center" exit={{ scale: 0, opacity: 0 }}>
-                <motion.div className="absolute inset-0 rounded-full border-2 border-dashed border-neon/50" animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} />
-                <motion.span className="display text-8xl font-black text-neon" animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>?</motion.span>
-              </motion.div>
-            ) : (
-              <motion.div key={`team-${index}`} className="flex flex-col items-center" initial="h" animate="s">
-                <motion.div
-                  variants={{ h: { scale: 0, rotateY: 180, opacity: 0 }, s: { scale: 1, rotateY: 0, opacity: 1 } }}
-                  transition={{ type: "spring", stiffness: 140, damping: 13 }}
-                  className="relative"
-                >
-                  <div className="absolute inset-0 -z-10 scale-150 rounded-full blur-3xl" style={{ background: c1, opacity: 0.45 }} />
-                  <TeamCrest team={item.team} size={170} />
-                </motion.div>
-                <motion.h2 variants={{ h: { opacity: 0, y: 20 }, s: { opacity: 1, y: 0 } }} transition={{ delay: 0.25 }} className="display mt-6 text-5xl font-black sm:text-6xl">
-                  {item.team.name}
-                </motion.h2>
-                {item.team.realName && <motion.div variants={{ h: { opacity: 0 }, s: { opacity: 1 } }} transition={{ delay: 0.35 }} className="text-sm text-mute">{item.team.realName}</motion.div>}
-                <motion.div variants={{ h: { opacity: 0, y: 20 }, s: { opacity: 1, y: 0 } }} transition={{ delay: 0.45 }} className="mt-5 flex w-full max-w-sm items-center gap-5">
-                  <div>
-                    <div className="display text-6xl font-black text-neon">{item.team.ovr}</div>
-                    <div className="text-[0.65rem] font-bold uppercase tracking-widest text-mute">Media</div>
-                  </div>
-                  <div className="flex-1 space-y-1.5">
-                    <RatingBar label="ATQ" value={item.team.att} color="bg-blaze" />
-                    <RatingBar label="MED" value={item.team.mid} color="bg-volt" />
-                    <RatingBar label="DEF" value={item.team.def} color="bg-neon" />
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+      <div ref={scope} className="relative flex w-full max-w-2xl flex-col items-center text-center">
+        <div className="kicker !text-sm">{position ? `${position.index} / ${position.total} · ` : ""}Es el turno de</div>
+        <div className="mt-2 flex items-center gap-3">
+          <PlayerDot color={participant.color} size={16} />
+          <span className="display text-5xl font-black italic sm:text-7xl" data-testid="reveal-participant">{participant.name}</span>
         </div>
 
-        <div className="mt-4 flex h-12 items-center gap-3">
-          {stage === "reveal" && (
-            <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} onClick={(e) => { e.stopPropagation(); next(); }} className="flex items-center gap-2 rounded-lg bg-white/10 px-5 py-3 font-display font-bold uppercase tracking-wider hover:bg-white/20" autoFocus>
-              {last ? "Continuar" : "Siguiente"} <ChevronRight className="size-5" />
+        <div className="kicker mt-8 !text-gold">Resultado del sorteo</div>
+        <div className="mt-4 flex flex-col items-center" key={`${participant.id}-${runId}`}>
+          <div data-reveal="crest" className="relative" style={hidden}>
+            <div className="absolute inset-0 -z-10 scale-150 rounded-full" style={{ background: `radial-gradient(circle, ${c1}88, transparent 70%)` }} />
+            <TeamCrest team={team} size={160} />
+          </div>
+          <div data-reveal="info" className="flex flex-col items-center" style={hidden}>
+            <h2 className="display mt-6 text-5xl font-black sm:text-6xl" data-testid="reveal-team">{team.name}</h2>
+            {team.realName && <div className="text-sm text-mute">{team.realName}</div>}
+            <div className="mt-5 flex w-full max-w-sm items-center gap-5">
+              <div>
+                <div className="display text-6xl font-black text-neon">{team.ovr}</div>
+                <div className="text-[0.65rem] font-bold uppercase tracking-widest text-mute">Media</div>
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <RatingBar label="ATQ" value={team.att} color="bg-blaze" />
+                <RatingBar label="MED" value={team.mid} color="bg-volt" />
+                <RatingBar label="DEF" value={team.def} color="bg-neon" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 flex h-12 items-center gap-3">
+          {stage === "assigned" && (
+            <motion.button
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={onContinue}
+              className="flex items-center gap-2 rounded-lg bg-neon px-6 py-3 font-display font-bold uppercase tracking-wider text-ink hover:bg-white"
+              autoFocus
+            >
+              {continueLabel} <ChevronRight className="size-5" />
             </motion.button>
           )}
-          {items.length > 1 && !last && (
-            <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="flex items-center gap-1 text-sm text-mute hover:text-white">
-              <SkipForward className="size-4" /> Saltar
+          {onSkip && (
+            <button onClick={onSkip} className="flex items-center gap-1 text-sm text-mute hover:text-white">
+              <SkipForward className="size-4" /> Saltar presentación
             </button>
           )}
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/**
+ * Presentación secuencial de varias asignaciones (sorteo completo o "presentar
+ * plantillas"). Cada una pasa por revelación → confirmación, igual que un turno normal.
+ */
+export function Presentation({ items, onDone }: { items: RevealItem[]; onDone: () => void }) {
+  const [index, setIndex] = useState(0);
+  const [stage, setStage] = useState<"revealing" | "assigned">("revealing");
+  const item = items[index];
+  if (!item) return null;
+  const last = index >= items.length - 1;
+  return (
+    <RevealOverlay
+      {...item}
+      stage={stage}
+      runId={index + 1}
+      position={{ index: index + 1, total: items.length }}
+      continueLabel={last ? "Ver equipos" : "Siguiente"}
+      onRevealed={(id) => id === index + 1 && setStage("assigned")}
+      onContinue={() => {
+        if (stage !== "assigned") return;
+        if (last) onDone();
+        else {
+          setIndex((i) => i + 1);
+          setStage("revealing");
+        }
+      }}
+      onSkip={last ? undefined : onDone}
+    />
   );
 }

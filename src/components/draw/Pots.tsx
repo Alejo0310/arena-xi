@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { animate } from "motion/react";
 import { useState } from "react";
 import { LayoutGrid } from "lucide-react";
 import { getTeam } from "@/lib/teams";
@@ -8,46 +8,44 @@ import { play } from "@/lib/sound";
 import { prefersReducedMotion } from "@/lib/fx";
 import { Button } from "@/components/ui/Button";
 import { TeamCrest } from "@/components/ui/TeamCrest";
-import type { StageProps } from "./types";
+import { useSpinAnimation, type StageProps } from "./types";
 
 /**
  * Bombos: los equipos se agrupan por valoración y todos los participantes
- * reciben un club del mismo bombo, para que nadie tenga ventaja excesiva.
+ * reciben un equipo del mismo bombo, para que nadie tenga ventaja excesiva.
  */
-export function Pots({ pots, potIndex, canChangePot, onSelectPot, pool, decide, onRevealed, busy }: StageProps & { pots: string[][]; potIndex: number; canChangePot: boolean; onSelectPot: (i: number) => void }) {
-  const [frozen, setFrozen] = useState<string[] | null>(null);
+export default function Pots(props: StageProps & { pots: string[][]; potIndex: number; canChangePot: boolean; onSelectPot: (i: number) => void }) {
+  const { pots, potIndex, canChangePot, onSelectPot, pool, phase, locked, actionLabel, onStart } = props;
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
   const potTeams = pots[potIndex] ?? [];
-  const available = new Set(frozen ?? pool);
+  const available = new Set(pool);
+  const spinning = phase === "spinning";
 
-  const run = () => {
-    if (busy || running || pool.length === 0) return;
-    const snapshot = [...pool];
-    const r = decide();
-    if (!r) return;
-    setFrozen(snapshot);
-    setRunning(true);
-    // Recorrido que desacelera y termina en el equipo ya sorteado.
-    const steps = prefersReducedMotion() ? 1 : 22 + snapshot.length;
-    const seq = Array.from({ length: steps - 1 }, (_, k) => snapshot[(k * 7 + 3) % snapshot.length]);
-    seq.push(r.teamId);
-    let k = 0;
-    const tick = () => {
-      setHighlight(seq[k]);
-      play("tick");
-      k++;
-      if (k < seq.length) setTimeout(tick, 50 + (k / seq.length) ** 3 * 380);
-      else
-        setTimeout(() => {
-          setRunning(false);
-          setHighlight(null);
-          setFrozen(null);
-          onRevealed(r);
-        }, 600);
-    };
-    tick();
-  };
+  // El resaltado recorre el bombo y se detiene en el equipo ya sorteado.
+  // Lo conduce una animación de Motion (con easing) y su promesa marca el final.
+  useSpinAnimation(props, async (pick) => {
+    const seq = [...pool];
+    if (!seq.length) return;
+    const reduced = prefersReducedMotion();
+    const target = Math.max(0, seq.indexOf(pick.teamId));
+    const steps = reduced ? target : seq.length * 3 + target;
+    let last = -1;
+    await animate(0, steps, {
+      duration: reduced ? 0.2 : 3.2,
+      ease: [0.1, 0.6, 0.3, 1],
+      onUpdate: (v) => {
+        const k = Math.round(v);
+        if (k !== last) {
+          last = k;
+          setHighlight(seq[k % seq.length]);
+          play("tick");
+        }
+      },
+    });
+    setHighlight(pick.teamId);
+  });
+
+  const shown = spinning || phase === "revealing" || phase === "assigned" ? highlight : null;
 
   return (
     <div className="w-full">
@@ -64,37 +62,35 @@ export function Pots({ pots, potIndex, canChangePot, onSelectPot, pool, decide, 
               className={`rounded-xl border px-4 py-2 text-left transition-colors disabled:opacity-30 ${i === potIndex ? "border-neon bg-neon/10" : "border-line hover:border-white/30"}`}
             >
               <div className="display text-lg font-bold">Bombo {i + 1}</div>
-              <div className="num text-xs text-mute">OVR {Math.min(...ratings)}–{Math.max(...ratings)} · {p.length} clubes</div>
+              <div className="num text-xs text-mute">OVR {Math.min(...ratings)}–{Math.max(...ratings)} · {p.length} equipos</div>
             </button>
           );
         })}
       </div>
-      {canChangePot && pots.length > 1 && <p className="mb-4 text-center text-xs text-mute">Elige de qué bombo se sortea antes de la primera asignación. Todos recibirán un club de ese nivel.</p>}
+      {canChangePot && pots.length > 1 && <p className="mb-4 text-center text-xs text-mute">Elige de qué bombo se sortea antes de la primera asignación. Todos recibirán un equipo de ese nivel.</p>}
 
       <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {potTeams.map((id) => {
           const t = getTeam(id)!;
-          const on = highlight === id;
+          const on = shown === id;
           const gone = !available.has(id);
           return (
-            <motion.div
+            <div
               key={id}
-              animate={{ scale: on ? 1.08 : 1, opacity: gone ? 0.25 : 1 }}
-              transition={{ duration: 0.08 }}
-              className={`flex items-center gap-2 rounded-xl border p-3 ${on ? "border-gold bg-gold/15 shadow-[0_0_30px_-6px_#ffd23d]" : "border-line bg-ink/40"}`}
+              className={`flex items-center gap-2 rounded-xl border p-3 transition-[transform,opacity,border-color,background-color] duration-100 ${on ? "scale-105 border-gold bg-gold/15" : "border-line bg-ink/40"} ${gone ? "opacity-25" : ""}`}
             >
               <TeamCrest team={t} size={34} />
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{t.name}</div>
                 <div className="num text-xs text-neon">{t.ovr}</div>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>
       <div className="mt-6 flex justify-center">
-        <Button size="lg" onClick={run} disabled={busy || running || pool.length === 0}>
-          <LayoutGrid className="size-5" /> {running ? "Sorteando..." : "Sortear del bombo"}
+        <Button size="lg" onClick={() => onStart()} disabled={locked || pool.length === 0} data-testid="draw-action">
+          <LayoutGrid className="size-5" /> {spinning ? "Sorteando..." : actionLabel}
         </Button>
       </div>
     </div>

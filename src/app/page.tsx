@@ -47,21 +47,20 @@ export default function HomePage() {
       <section className="relative pt-6 sm:pt-12">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="kicker flex items-center gap-2">
           <span className="size-1.5 animate-pulse-glow rounded-full bg-neon shadow-[0_0_10px_#3dff8b]" />
-          EA SPORTS FC 25 · Torneos entre amigos
+          ARENA XI · Torneos de EA SPORTS FC 25
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="display mt-4 max-w-4xl text-[clamp(3rem,9vw,7.5rem)] font-black italic"
+          className="display mt-4 max-w-4xl text-[clamp(3.6rem,12vw,9.5rem)] font-black italic"
         >
-          Sortea. Compite.
-          <br />
-          <span className="text-gradient">Levanta la copa.</span>
+          ARENA <span className="text-gradient">XI</span>
+          <span className="mt-3 block text-[clamp(1.8rem,5vw,3.6rem)] text-soft">Que gane el mejor.</span>
         </motion.h1>
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mt-6 max-w-xl text-lg text-soft">
-          Ligas y eliminatorias con sorteos de equipos dignos de una gala: ruletas, sobres, tómbolas, draft y bombos.
-          Resultados, tablas, llaves y estadísticas en tiempo real.
+          Ligas y eliminatorias de clubes o selecciones, con sorteos de equipos dignos de una gala: ruletas, sobres,
+          tómbolas, draft y bombos. Resultados, tablas, llaves y estadísticas en tiempo real.
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="mt-9 flex flex-wrap gap-3">
@@ -111,11 +110,7 @@ export default function HomePage() {
 
       {/* Cinta de clubes */}
       <section aria-label="Clubes disponibles" className="relative -mx-4 overflow-hidden sm:-mx-6 [mask-image:linear-gradient(90deg,transparent,black_10%,black_90%,transparent)]">
-        <motion.div
-          className="flex w-max gap-4 py-2"
-          animate={{ x: ["0%", "-50%"] }}
-          transition={{ duration: 60, ease: "linear", repeat: Infinity }}
-        >
+        <div className="flex w-max animate-marquee gap-4 py-2 will-change-transform">
           {marquee.map((t, i) => (
             <div key={`${t.id}-${i}`} className="glass flex items-center gap-3 px-4 py-2.5">
               <TeamCrest team={t} size={30} />
@@ -123,7 +118,7 @@ export default function HomePage() {
               <span className="display text-xl font-extrabold text-neon">{t.ovr}</span>
             </div>
           ))}
-        </motion.div>
+        </div>
       </section>
 
       <section>

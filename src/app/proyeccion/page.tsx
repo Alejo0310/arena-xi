@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, Maximize, Radio } from "lucide-react";
-import { useTournament } from "@/store/tournament";
+import { STORAGE_KEY, useTournament } from "@/store/tournament";
 import { Loader, useHydrated, useNow } from "@/components/ui/bits";
 import { StandingsTable } from "@/components/tournament/StandingsTable";
 import { Bracket } from "@/components/tournament/Bracket";
@@ -12,7 +12,7 @@ import { MatchTimer } from "@/components/tournament/MatchTimer";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { recentResults, upcomingMatches } from "@/lib/tournament/engine";
 import { getTeam } from "@/lib/teams";
-import { Logo } from "@/components/layout/AppShell";
+import { Logo } from "@/components/layout/Logo";
 import type { Match, Tournament } from "@/lib/types";
 
 /**
@@ -26,7 +26,7 @@ export default function ProjectionPage() {
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "fc25-tournament-manager") void useTournament.persist.rehydrate();
+      if (e.key === STORAGE_KEY) void useTournament.persist.rehydrate();
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -54,7 +54,7 @@ export default function ProjectionPage() {
       <header className="mb-6 flex items-center gap-4">
         <Logo size={44} />
         <div className="min-w-0 flex-1">
-          <div className="kicker">{t.settings.format === "league" ? "Liga" : "Eliminatorias"} · FC 25</div>
+          <div className="kicker">ARENA XI · {t.settings.format === "league" ? "Liga" : "Eliminatorias"}</div>
           <h1 className="display truncate text-4xl font-black italic sm:text-6xl">{t.name}</h1>
         </div>
         <div className="display num hidden text-4xl font-bold text-soft sm:block">{new Date(now).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}</div>
@@ -90,9 +90,9 @@ export default function ProjectionPage() {
 
       {recent.length > 0 && (
         <div className="mt-6 overflow-hidden rounded-xl border border-line bg-ink/70 [mask-image:linear-gradient(90deg,transparent,black_5%,black_95%,transparent)]">
-          <motion.div className="flex w-max gap-10 py-3" animate={{ x: ["0%", "-50%"] }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }}>
+          <div className="flex w-max animate-marquee gap-10 py-3 [animation-duration:30s] will-change-transform">
             {[...recent, ...recent].map((m, i) => <MiniMatch key={`${m.id}-${i}`} t={t} m={m} inline />)}
-          </motion.div>
+          </div>
         </div>
       )}
     </div>

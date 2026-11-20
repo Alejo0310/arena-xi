@@ -17,11 +17,23 @@ const barlow = Barlow({
   display: "swap",
 });
 
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000";
+const description = "ARENA XI: sorteos de equipos animados y torneos de EA SPORTS FC 25 entre amigos. Ligas, eliminatorias, clubes y selecciones. Que gane el mejor.";
+
 export const metadata: Metadata = {
-  title: "FC 25 Tournament Manager · Sorteos y torneos entre amigos",
-  description:
-    "Organiza ligas y eliminatorias de EA SPORTS FC 25: sorteos de equipos animados, resultados, tablas, llaves y estadísticas.",
-  applicationName: "FC 25 Tournament Manager",
+  metadataBase: new URL(siteUrl),
+  title: { default: "ARENA XI · Que gane el mejor", template: "%s · ARENA XI" },
+  description,
+  applicationName: "ARENA XI",
+  keywords: ["EA SPORTS FC 25", "torneo", "sorteo de equipos", "liga", "eliminatorias", "FIFA", "ARENA XI"],
+  openGraph: {
+    type: "website",
+    siteName: "ARENA XI",
+    title: "ARENA XI · Que gane el mejor",
+    description,
+    locale: "es_ES",
+  },
+  twitter: { card: "summary_large_image", title: "ARENA XI · Que gane el mejor", description },
 };
 
 export const viewport: Viewport = {

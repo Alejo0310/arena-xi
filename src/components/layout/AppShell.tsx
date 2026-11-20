@@ -8,6 +8,7 @@ import { Database, History, Home, Maximize, Minimize, MonitorPlay, Shuffle, Trop
 import { useTournament } from "@/store/tournament";
 import { ConfirmHost, Toaster } from "@/components/ui/feedback";
 import { BackgroundFX } from "./BackgroundFX";
+import { Logo, Wordmark } from "./Logo";
 import { useHydrated } from "@/components/ui/bits";
 
 const NAV = [
@@ -63,14 +64,9 @@ function Header({ pathname }: { pathname: string }) {
   return (
     <header className="no-print sticky top-0 z-50 border-b border-line bg-ink/75 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-2.5" aria-label="FC 25 Tournament Manager, inicio">
-          <Logo />
-          <div className="leading-none">
-            <div className="display text-lg font-black tracking-wide">
-              FC<span className="text-neon">25</span> <span className="text-soft">Arena</span>
-            </div>
-            <div className="text-[0.62rem] font-semibold uppercase tracking-[0.25em] text-mute">Tournament Manager</div>
-          </div>
+        <Link href="/" className="group flex items-center gap-2.5" aria-label="ARENA XI, inicio">
+          <Logo className="transition-transform duration-500 group-hover:scale-110" />
+          <Wordmark />
         </Link>
 
         <nav className="ml-6 hidden items-center gap-1 lg:flex" aria-label="Principal">
@@ -130,21 +126,5 @@ function IconBtn({ label, onClick, children, className = "", pressed }: { label:
     <button onClick={onClick} aria-label={label} title={label} aria-pressed={pressed} className={`grid size-10 place-items-center rounded-lg text-soft transition-colors hover:bg-white/5 hover:text-white ${className}`}>
       {children}
     </button>
-  );
-}
-
-export function Logo({ size = 36 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden className="transition-transform duration-500 group-hover:rotate-[20deg]">
-      <defs>
-        <linearGradient id="logo-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#3dff8b" />
-          <stop offset="1" stopColor="#2f9bff" />
-        </linearGradient>
-      </defs>
-      <path d="M20 2 L36 11 V29 L20 38 L4 29 V11 Z" fill="none" stroke="url(#logo-g)" strokeWidth="2.5" />
-      <path d="M20 10 L27 14.5 V25.5 L20 30 L13 25.5 V14.5 Z" fill="url(#logo-g)" opacity="0.9" />
-      <circle cx="20" cy="20" r="3" fill="#05070a" />
-    </svg>
   );
 }

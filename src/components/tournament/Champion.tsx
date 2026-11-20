@@ -8,6 +8,7 @@ import { getTeam } from "@/lib/teams";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { championCelebration } from "@/lib/fx";
 import { play } from "@/lib/sound";
+import { Logo } from "@/components/layout/Logo";
 
 export function ChampionOverlay({ t, onClose }: { t: Tournament; onClose: () => void }) {
   const p = t.participants.find((x) => x.id === t.championId);
@@ -43,7 +44,10 @@ export function ChampionOverlay({ t, onClose }: { t: Tournament; onClose: () => 
             <span className="display text-3xl font-bold">{team.name}</span>
           </motion.div>
         )}
-        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2 }} className="mt-10 text-sm text-mute">Toca para continuar</motion.p>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2 }} className="mt-10 flex flex-col items-center gap-2">
+          <span className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.3em] text-soft"><Logo size={22} /> ARENA XI · Que gane el mejor</span>
+          <span className="text-sm text-mute">Toca para continuar</span>
+        </motion.div>
       </div>
     </motion.div>
   );

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/Button";
 import { Loader, PlayerDot, SectionHeader, useHydrated } from "@/components/ui/bits";
 import { confirmDialog, toast } from "@/components/ui/feedback";
 import { TeamBrowser } from "@/components/teams/TeamBrowser";
+import { useCategoryChange } from "@/components/teams/useCategoryChange";
+import { CATEGORY_LABEL } from "@/lib/category";
 import { generateTournamentName, PLAYER_COLORS } from "@/lib/names";
 import { bracketSize } from "@/lib/tournament/knockout";
 import type { Participant, TournamentSettings } from "@/lib/types";
@@ -50,6 +52,7 @@ function SetupForm({ onDone }: { onDone: () => void }) {
   const t = useTournament((s) => s.current)!;
   const rename = useTournament((s) => s.rename);
   const setPool = useTournament((s) => s.setPool);
+  const changeCategory = useCategoryChange();
   const resetDraw = useTournament((s) => s.resetDraw);
   const n = t.participants.length;
 
@@ -95,9 +98,18 @@ function SetupForm({ onDone }: { onDone: () => void }) {
       <Format />
 
       <section>
-        <div className="kicker mb-3">Paso 4 · Equipos del sorteo</div>
-        <SectionHeader title={`${t.teamPool.length} clubes seleccionados`} />
-        <TeamBrowser selected={t.teamPool} onChange={setPool} />
+        <div className="kicker mb-3">Paso 4 · Categoría y equipos del sorteo</div>
+        <SectionHeader title={`Torneo de ${CATEGORY_LABEL[t.settings.category].toLowerCase()} · ${t.teamPool.length} seleccionados`} />
+        <p className="-mt-3 mb-4 text-sm text-mute">Todos los participantes juegan con equipos de la misma categoría: clubes contra clubes o selecciones contra selecciones.</p>
+        <TeamBrowser
+          category={t.settings.category}
+          onCategoryChange={changeCategory}
+          selected={t.teamPool}
+          onChange={(ids) => {
+            const err = setPool(ids);
+            if (err) toast.error(err);
+          }}
+        />
       </section>
 
       <div className="no-print sticky bottom-4 z-40">
@@ -106,7 +118,7 @@ function SetupForm({ onDone }: { onDone: () => void }) {
             {problems.length ? (
               <span className="flex items-center gap-2 text-blaze"><AlertTriangle className="size-4 shrink-0" /> {problems[0]}</span>
             ) : (
-              <span className="flex items-center gap-2 text-neon"><Check className="size-4" /> Todo listo: {n} jugadores, {t.settings.format === "league" ? "liga" : "eliminatorias"}, {t.teamPool.length} equipos.</span>
+              <span className="flex items-center gap-2 text-neon"><Check className="size-4" /> Todo listo: {n} jugadores, {t.settings.format === "league" ? "liga" : "eliminatorias"}, {t.teamPool.length} {CATEGORY_LABEL[t.settings.category].toLowerCase()}.</span>
             )}
           </div>
           <Button size="lg" onClick={goDraw} disabled={problems.length > 0} className="w-full sm:w-auto">

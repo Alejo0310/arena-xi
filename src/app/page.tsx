@@ -11,6 +11,7 @@ import { confirmDialog } from "@/components/ui/feedback";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { TEAMS } from "@/lib/teams";
 import { phaseHref, PHASE_LABEL } from "@/lib/routes";
+import { HeroVisual } from "@/components/hero/HeroVisual";
 
 const MODES = [
   { icon: Disc3, name: "Ruleta", text: "La rueda gira, frena y anuncia tu club." },
@@ -44,7 +45,8 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
-      <section className="relative pt-6 sm:pt-12">
+      <section className="relative grid items-center gap-6 pt-6 sm:pt-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-4">
+        <div className="min-w-0">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="kicker flex items-center gap-2">
           <span className="size-1.5 animate-pulse-glow rounded-full bg-neon shadow-[0_0_10px_#3dff8b]" />
           ARENA XI · Torneos de EA SPORTS FC 25
@@ -53,7 +55,7 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="display mt-4 max-w-4xl text-[clamp(3.6rem,12vw,9.5rem)] font-black italic"
+          className="display mt-4 max-w-4xl text-[clamp(3.6rem,12vw,8.5rem)] font-black italic"
         >
           ARENA <span className="text-gradient">XI</span>
           <span className="mt-3 block text-[clamp(1.8rem,5vw,3.6rem)] text-soft">Que gane el mejor.</span>
@@ -106,6 +108,12 @@ export default function HomePage() {
             </Button>
           </motion.div>
         )}
+        </div>
+
+        {/* Elemento protagonista: núcleo de sorteo 3D (con versión CSS de respaldo) */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25, duration: 0.8 }} className="min-w-0">
+          <HeroVisual />
+        </motion.div>
       </section>
 
       {/* Cinta de clubes */}

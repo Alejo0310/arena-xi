@@ -1,10 +1,12 @@
-# FC 25 Arena · Tournament Manager
+# ARENA XI
 
-Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sorteos de equipos animados, ligas, eliminatorias, resultados, tablas, llaves y estadísticas.
+**Que gane el mejor.**
 
-> Proyecto no oficial, sin relación con Electronic Arts. Las insignias de los equipos son ilustraciones propias con los colores de cada club; no se reproducen escudos oficiales.
+Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sorteos de equipos animados, ligas y eliminatorias de clubes o selecciones, resultados, tablas, llaves y estadísticas.
 
-**🌐 Demo en producción:** https://fc-tournament-manager.vercel.app
+> Proyecto no oficial, sin relación con Electronic Arts. Las insignias de los clubes y las banderas de las selecciones son ilustraciones propias; no se reproducen escudos oficiales.
+
+**🌐 Producción:** PRODUCTION_URL
 
 ## Características
 
@@ -12,20 +14,35 @@ Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sort
 - Participantes: alta (uno a uno o varios separados por comas), edición en línea, eliminación, color identificativo y bloqueo de nombres duplicados.
 - Selector de cantidad (2–32) que crea o recorta plazas, con vista previa de la estructura (jornadas, descansos, BYE).
 - Modalidades **Liga** (una o dos vueltas, puntos configurables, desempate por diferencia de goles o enfrentamiento directo) y **Eliminatorias** (BYE automáticos, partido por el tercer puesto, empates resueltos por penaltis o ganador manual).
+- **Categoría única por torneo: clubes o selecciones.** Clubes y selecciones nunca se mezclan (ver más abajo).
 - Generador de nombres de torneo, opción de equipos repetidos y duración del cronómetro.
 
 **Sorteo de equipos** (5 mecánicas)
 | Modo | Experiencia |
 |---|---|
-| Ruleta | Rueda con los clubes disponibles que frena sobre el equipo sorteado |
+| Ruleta | Rueda con los equipos disponibles que frena sobre el equipo sorteado |
 | Sobres | Sobres sellados al barajar; cada jugador abre uno |
 | Tómbola | Bombo con bolas que se agitan y expulsa la ganadora |
 | Draft | Tres cartas aleatorias, el jugador elige una |
-| Bombos | Clubes agrupados por valoración; todos reciben uno del mismo nivel |
+| Bombos | Equipos agrupados por valoración; todos reciben uno del mismo nivel |
 
-- Sorteo individual o completo, presentación cinematográfica de cada jugador con su club, historial con hora, reinicio con confirmación.
+- Sorteo individual o completo, presentación cinematográfica de cada jugador con su equipo, historial con hora, reinicio con confirmación.
 - **Transparencia**: el resultado se decide con `crypto.getRandomValues` (sin sesgo de módulo) y se guarda *antes* de animar; la animación solo lo revela. El orden de los jugadores también es aleatorio.
 - Sin repeticiones salvo que se habilite expresamente.
+
+**Flujo sincronizado del sorteo.** Las cinco mecánicas usan un único controlador ([`useDrawController`](src/components/draw/useDrawController.ts)) y una máquina de estados pura ([`drawFlow.ts`](src/lib/drawFlow.ts)):
+
+```
+READY ─START─▶ SPINNING ─fin de animación─▶ REVEALING ─fin de revelación─▶ ASSIGNED
+  ▲                                                                          │
+  └── NEXT_READY ── NEXT ◀────────── CONTINUAR (quedan jugadores) ───────────┤
+                                     CONTINUAR (último jugador) ──▶ COMPLETED
+```
+
+- El equipo se decide y se guarda como *pendiente* antes de animar; el turno solo avanza cuando el usuario pulsa **Continuar**.
+- Las transiciones las disparan las promesas reales de fin de animación de Motion (no temporizadores). Cada giro tiene un `runId`: eventos duplicados o de animaciones antiguas se ignoran.
+- El último participante pasa por los mismos estados que los demás; la conformación final solo aparece en `COMPLETED`.
+- Recargar o cambiar de pantalla a mitad de animación reanuda la revelación del resultado ya decidido (no se puede volver a sortear).
 
 **Competición**
 - Tarjetas de partido con estado (pendiente, en juego, finalizado), marcador, penaltis, ganador manual (W.O. 3-0 en liga), edición con confirmación y borrado.
@@ -44,13 +61,19 @@ Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sort
 - Modo proyección para pantalla grande, sincronizado con la pestaña de administración.
 - Pantalla completa, sonidos sintetizados opcionales (desactivados por defecto) y respeto de `prefers-reduced-motion`.
 
+## Clubes y selecciones
+
+Un torneo es **de clubes** o **de selecciones**, nunca mixto. La regla vive en [`src/lib/category.ts`](src/lib/category.ts) y la aplican todas las capas: el store (pool, cambio de categoría, importación y datos guardados), la lógica de sorteo (`decidePick`, `validateAssignments`) y el motor del torneo (`buildMatches`, `recordResult`). Un estado manipulado a mano que mezcle categorías no se puede sortear, iniciar ni puntuar. Cambiar de categoría con un sorteo en curso pide confirmación y reinicia el sorteo.
+
 ## Datos de los equipos
 
-26 clubes con media (OVR), ataque, mediocampo y defensa de la base de datos **FC 25 de FIFA Index**, que corresponde a la última actualización de plantillas de FC 25 (julio de 2025). Los datos se contrastaron con ReFIFA, SoFIFA y FIFACM; cada equipo indica su fuente en [`src/lib/teams.ts`](src/lib/teams.ts). No se usan datos de FC 26.
+**Clubes:** 26 clubes con media (OVR), ataque, mediocampo y defensa de la base de datos **FC 25 de FIFA Index**, que corresponde a la última actualización de plantillas de FC 25 (julio de 2025). Los datos se contrastaron con ReFIFA, SoFIFA y FIFACM; cada equipo indica su fuente en [`src/lib/teams.ts`](src/lib/teams.ts). No se usan datos de FC 26.
 
 En FC 25 el Inter y el AC Milan aparecen sin licencia como **Lombardia FC** y **Milano FC**; la app muestra el nombre del juego y el nombre real.
 
 Las valoraciones del lanzamiento (septiembre de 2024) eran algo distintas: por ejemplo, Real Madrid y Manchester City tenían 86.
+
+**Selecciones:** 10 selecciones masculinas de FC 25 con valoraciones verificadas: Francia, España, Alemania, Inglaterra, Portugal, Argentina, Países Bajos, Italia, Croacia y Marruecos. Fuentes: FIFA Index (FC 25) y, cuando no estaba disponible, instantáneas de SoFIFA, FIFACM o CMTracker de FC 25 (indicadas por equipo). **Brasil y Uruguay no tienen licencia en FC 25** y por eso no aparecen. Bélgica está en el juego, pero no se encontraron valoraciones de FC 25 verificables, así que se omite hasta confirmarlas.
 
 ## Tecnologías
 
@@ -69,7 +92,9 @@ src/
 │  ├─ types.ts              Modelo de dominio
 │  ├─ teams.ts              Base de datos de equipos FC 25
 │  ├─ random.ts             Aleatoriedad criptográfica
-│  ├─ draw.ts               Lógica de sorteos (los 5 modos)
+│  ├─ draw.ts               Lógica de sorteos (decidir / confirmar, 5 modos)
+│  ├─ drawFlow.ts           Máquina de estados del flujo visual del sorteo
+│  ├─ category.ts           Regla clubes vs. selecciones (validación central)
 │  ├─ tournament/
 │  │  ├─ league.ts          Calendario (método del círculo) y clasificación
 │  │  ├─ knockout.ts        Cuadro, BYE, propagación de ganadores
@@ -79,6 +104,7 @@ src/
 │  └─ share.ts, sound.ts, fx.ts, names.ts
 ├─ store/tournament.ts      Estado global + persistencia
 ├─ components/              UI (draw/, tournament/, teams/, layout/, ui/)
+│  └─ draw/useDrawController.ts  Controlador único del sorteo
 └─ app/                     Rutas: / · /nuevo · /sorteo · /torneo · /equipos
                             /historial · /proyeccion · /compartir
 ```

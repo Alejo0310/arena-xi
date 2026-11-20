@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { Download, FileJson, ImageDown, Link2, MonitorPlay, Plus, Printer, RotateCcw, Trophy } from "lucide-react";
-import { toPng } from "html-to-image";
 import { useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader, useHydrated } from "@/components/ui/bits";
@@ -49,6 +48,7 @@ export default function TournamentPage() {
   const exportImage = async () => {
     if (!bodyRef.current) return;
     try {
+      const { toPng } = await import("html-to-image");
       const url = await toPng(bodyRef.current, { backgroundColor: "#05070a", pixelRatio: 2, cacheBust: true });
       const a = document.createElement("a");
       a.href = url;
@@ -61,7 +61,7 @@ export default function TournamentPage() {
   };
 
   const share = async () => {
-    const url = shareUrl(t);
+    const url = await shareUrl(t);
     try {
       if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
         await navigator.share({ title: t.name, url });

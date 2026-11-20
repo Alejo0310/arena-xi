@@ -23,6 +23,7 @@
   --animate-pulse-glow: pulse-glow 2.4s ease-in-out infinite;
   --animate-sweep: sweep 3.5s linear infinite;
   --animate-float: float 6s ease-in-out infinite;
+  --animate-marquee: marquee 60s linear infinite;
 }
 
 @keyframes pulse-glow {
@@ -32,6 +33,11 @@
 @keyframes sweep {
   from { transform: translateX(-120%) skewX(-20deg); }
   to { transform: translateX(320%) skewX(-20deg); }
+}
+/* Cintas infinitas: transform en CSS, se ejecuta en el compositor sin coste de JS. */
+@keyframes marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
 }
 @keyframes float {
   0%, 100% { transform: translateY(0); }
@@ -65,11 +71,10 @@ body {
     background: linear-gradient(180deg, rgb(24 29 37 / 0.82), rgb(14 17 22 / 0.86));
     border: 1px solid var(--color-line);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 20px 50px -24px rgb(0 0 0 / 0.8);
-    backdrop-filter: blur(14px);
     border-radius: 1.1rem;
   }
   .glass-hover {
-    transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+    transition: border-color 0.25s, box-shadow 0.25s;
   }
   .glass-hover:hover {
     border-color: rgb(61 255 139 / 0.35);

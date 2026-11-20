@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Eye, Download } from "lucide-react";
 import { decodeTournament } from "@/lib/share";
 import type { Tournament } from "@/lib/types";
-import { useTournament } from "@/store/tournament";
+import { normalizeTournament, useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader } from "@/components/ui/bits";
 import { toast } from "@/components/ui/feedback";
@@ -21,7 +21,7 @@ export default function SharedPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const read = () => setT(decodeTournament(window.location.hash.slice(1)));
+    const read = () => void decodeTournament(window.location.hash.slice(1)).then((x) => setT(x ? normalizeTournament(x) : null));
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);

@@ -6,7 +6,7 @@ Aplicación web para organizar torneos de **EA SPORTS FC 25** entre amigos: sort
 
 > Proyecto no oficial, sin relación con Electronic Arts. Las insignias de los clubes y las banderas de las selecciones son ilustraciones propias; no se reproducen escudos oficiales.
 
-**🌐 Producción:** PRODUCTION_URL
+**🌐 Producción:** https://arena-xi-fc.vercel.app
 
 ## Características
 
@@ -43,6 +43,12 @@ READY ─START─▶ SPINNING ─fin de animación─▶ REVEALING ─fin de rev
 - Las transiciones las disparan las promesas reales de fin de animación de Motion (no temporizadores). Cada giro tiene un `runId`: eventos duplicados o de animaciones antiguas se ignoran.
 - El último participante pasa por los mismos estados que los demás; la conformación final solo aparece en `COMPLETED`.
 - Recargar o cambiar de pantalla a mitad de animación reanuda la revelación del resultado ya decidido (no se puede volver a sortear).
+
+**Portada con núcleo de sorteo 3D**
+- Balón 3D generado por shader (12 pentágonos y 20 hexágonos con costuras de neón, sin modelos ni texturas externas), anillos de energía y tarjetas de equipos en órbita.
+- Parallax con el cursor, reacción al pasar por encima y **sorteo exprés** al pulsar el balón: el equipo se decide primero y la órbita frena hasta dejarlo delante.
+- Three.js puro (sin React Three Fiber), cargado de forma diferida solo en escritorio con WebGL capaz, tras el evento `load` y con el navegador libre. Shaders compilados en paralelo, resolución limitada, render pausado fuera de pantalla y liberación del contexto WebGL al salir.
+- En móvil, con movimiento reducido o sin WebGL: versión SVG/CSS ligera con el mismo concepto.
 
 **Competición**
 - Tarjetas de partido con estado (pendiente, en juego, finalizado), marcador, penaltis, ganador manual (W.O. 3-0 en liga), edición con confirmación y borrado.
@@ -108,6 +114,17 @@ src/
 └─ app/                     Rutas: / · /nuevo · /sorteo · /torneo · /equipos
                             /historial · /proyeccion · /compartir
 ```
+
+## Rendimiento
+
+Mediciones con Lighthouse (móvil simulado) en local, mediana de 5 ejecuciones alternadas entre versiones:
+
+| Página | Antes de la optimización | Después |
+|---|---|---|
+| Portada | 57 · TBT 3.180 ms · FCP 1,52 s | 80 · TBT 438 ms · FCP 0,85 s |
+| /equipos | 68 · TBT 896 ms · FCP 1,59 s | 82 · TBT 376 ms · FCP 0,76 s |
+
+Principales causas corregidas: `mask-image` a pantalla completa, sombras con mucho desenfoque en cada tarjeta, `shadowBlur` por partícula en el canvas del fondo, barras animando `width` y cintas infinitas animadas con JavaScript. Las cifras varían según la carga del equipo, por eso se comparan versiones en la misma sesión.
 
 ## Instalación y ejecución
 

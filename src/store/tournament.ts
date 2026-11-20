@@ -1,19 +1,21 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import type { DrawMode, Participant, Tournament, TournamentSettings } from "@/lib/types";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import type { DrawMode, Participant, PendingPick, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
 import { uid } from "@/lib/random";
-import { DEFAULT_POOL } from "@/lib/teams";
+import { defaultPool } from "@/lib/teams";
 import { PLAYER_COLORS, generateTournamentName } from "@/lib/names";
 import * as draw from "@/lib/draw";
 import * as engine from "@/lib/tournament/engine";
 import type { ResultInput } from "@/lib/tournament/match";
 import { setSoundEnabled } from "@/lib/sound";
 import { isTournament } from "@/lib/share";
+import { categoryError, isKind, sanitizePool, tournamentCategoryError } from "@/lib/category";
 
 export const DEFAULT_SETTINGS: TournamentSettings = {
   format: "league",
+  category: "club",
   legs: 1,
   thirdPlace: true,
   tiebreak: "gd",
@@ -23,24 +25,28 @@ export const DEFAULT_SETTINGS: TournamentSettings = {
 };
 
 export const MAX_PARTICIPANTS = 32;
+export const STORAGE_KEY = "arena-xi";
+/** Clave usada por versiones anteriores; se migra automáticamente. */
+const LEGACY_KEY = "fc25-tournament-manager";
 
 function blankTournament(base?: Partial<Tournament>): Tournament {
   const now = Date.now();
+  const settings = { ...DEFAULT_SETTINGS, ...base?.settings };
   return {
     id: uid("t"),
     name: generateTournamentName(),
     createdAt: now,
     updatedAt: now,
     phase: "setup",
-    settings: { ...DEFAULT_SETTINGS },
     participants: [],
-    teamPool: [...DEFAULT_POOL],
+    teamPool: defaultPool(settings.category),
     assignments: {},
     drawHistory: [],
     draw: null,
     matches: [],
     championId: null,
     ...base,
+    settings,
   };
 }
 
@@ -53,15 +59,21 @@ interface State {
 
   newTournament: (opts?: { keepParticipants?: boolean }) => void;
   rename: (name: string) => void;
-  updateSettings: (patch: Partial<TournamentSettings>) => void;
+  updateSettings: (patch: Partial<Omit<TournamentSettings, "category">>) => void;
+  setCategory: (kind: TeamKind) => Err;
   addParticipant: (name: string) => Err;
   editParticipant: (id: string, patch: Partial<Omit<Participant, "id">>) => Err;
   removeParticipant: (id: string) => void;
-  setPool: (ids: string[]) => void;
+  setPool: (ids: string[]) => Err;
 
   startDraw: (mode: DrawMode) => Err;
   selectPot: (index: number) => void;
-  assign: (participantId: string, teamId: string, envelopeIndex?: number) => void;
+  /** Decide (y guarda como pendiente) el equipo del turno actual. No avanza el turno. */
+  drawDecide: (choice?: draw.Choice) => { pending?: PendingPick; error?: string };
+  /** Confirma el resultado pendiente y pasa al siguiente participante. */
+  drawConfirm: () => Err;
+  /** Asigna equipo a todos los que faltan de una vez. */
+  drawRemaining: () => { participantId: string; teamId: string }[];
   resetDraw: () => void;
 
   startTournament: () => Err;
@@ -95,6 +107,26 @@ function invalidateDraw(t: Tournament): Tournament {
   return { ...t, phase: "setup", draw: null, assignments: {}, drawHistory: [] };
 }
 
+/**
+ * Normaliza un torneo cargado (localStorage, importación o versiones antiguas):
+ * añade la categoría si falta y, si su estado mezcla categorías, descarta el sorteo.
+ */
+export function normalizeTournament(raw: Tournament): Tournament {
+  const settings = { ...DEFAULT_SETTINGS, ...raw.settings, category: isKind(raw.settings?.category) ? raw.settings.category : "club" };
+  let t: Tournament = { ...raw, settings, draw: raw.draw ? { ...raw.draw, id: raw.draw.id ?? uid("d"), pending: raw.draw.pending ?? null } : null };
+  if (tournamentCategoryError(t) && (t.phase === "setup" || t.phase === "draw")) {
+    t = { ...t, phase: "setup", draw: null, assignments: {}, drawHistory: [], teamPool: sanitizePool(t.teamPool, settings.category) };
+  }
+  return t;
+}
+
+/** Lee la clave nueva y, si no existe, la de la versión anterior (sin perder torneos). */
+const storage: StateStorage = {
+  getItem: (name) => localStorage.getItem(name) ?? (name === STORAGE_KEY ? localStorage.getItem(LEGACY_KEY) : null),
+  setItem: (name, value) => localStorage.setItem(name, value),
+  removeItem: (name) => localStorage.removeItem(name),
+};
+
 export const useTournament = create<State>()(
   persist(
     (set, get) => {
@@ -118,7 +150,7 @@ export const useTournament = create<State>()(
           set({
             history: archive(get().history, prev),
             current: blankTournament(
-              keep ? { participants: prev.participants, settings: prev.settings, teamPool: prev.teamPool } : undefined,
+              keep ? { participants: prev.participants, settings: prev.settings, teamPool: sanitizePool(prev.teamPool, prev.settings.category) } : undefined,
             ),
           });
         },
@@ -127,7 +159,27 @@ export const useTournament = create<State>()(
 
         updateSettings: (patch) => {
           if (!editable()) return;
-          mutate((t) => invalidateDraw({ ...t, settings: { ...t.settings, ...patch } }));
+          // La categoría solo cambia mediante setCategory (que reinicia el pool).
+          const { category: _ignored, ...safe } = patch as Partial<TournamentSettings>;
+          void _ignored;
+          mutate((t) => invalidateDraw({ ...t, settings: { ...t.settings, ...safe } }));
+        },
+
+        setCategory: (kind) => {
+          const t = editable();
+          if (!t) return "El torneo ya ha comenzado: la categoría no se puede cambiar.";
+          if (!isKind(kind)) return "Categoría no válida.";
+          if (t.settings.category === kind) return null;
+          mutate((x) => ({
+            ...x,
+            phase: "setup",
+            draw: null,
+            assignments: {},
+            drawHistory: [],
+            settings: { ...x.settings, category: kind },
+            teamPool: defaultPool(kind),
+          }));
+          return null;
         },
 
         addParticipant: (name) => {
@@ -161,8 +213,12 @@ export const useTournament = create<State>()(
         },
 
         setPool: (ids) => {
-          if (!editable()) return;
-          mutate((t) => invalidateDraw({ ...t, teamPool: [...new Set(ids)] }));
+          const t = editable();
+          if (!t) return "El torneo ya ha comenzado.";
+          const err = categoryError(ids, t.settings.category);
+          if (err) return err;
+          mutate((x) => invalidateDraw({ ...x, teamPool: [...new Set(ids)] }));
+          return null;
         },
 
         startDraw: (mode) => {
@@ -176,16 +232,45 @@ export const useTournament = create<State>()(
 
         selectPot: (index) => mutate((t) => (t.draw ? { ...t, draw: draw.selectPot(t.draw, index) } : t)),
 
-        assign: (participantId, teamId, envelopeIndex) =>
-          mutate((t) => {
-            if (!t.draw || draw.currentParticipant(t.draw) !== participantId || t.assignments[participantId]) return t;
-            return {
-              ...t,
-              draw: draw.commitPick(t.draw, teamId, t.settings.allowRepeatTeams, envelopeIndex),
-              assignments: { ...t.assignments, [participantId]: teamId },
-              drawHistory: [...t.drawHistory, draw.record(participantId, teamId, t.draw.mode, envelopeIndex)],
-            };
-          }),
+        drawDecide: (choice) => {
+          const t = get().current;
+          if (!t || t.phase !== "draw" || !t.draw) return { error: "No hay un sorteo en curso." };
+          const res = draw.decidePick(t.draw, t.settings.category, choice);
+          if (res.pending) mutate((x) => ({ ...x, draw: { ...x.draw!, pending: res.pending } }));
+          return res;
+        },
+
+        drawConfirm: () => {
+          const t = get().current;
+          if (!t?.draw?.pending) return "No hay ningún resultado pendiente.";
+          const res = draw.confirmPick(t.draw, t.settings.allowRepeatTeams);
+          if (!res) return "El resultado pendiente no corresponde al turno actual.";
+          mutate((x) => ({
+            ...x,
+            draw: res.state,
+            assignments: { ...x.assignments, [res.record.participantId]: res.record.teamId },
+            drawHistory: [...x.drawHistory, res.record],
+          }));
+          return null;
+        },
+
+        drawRemaining: () => {
+          const t = get().current;
+          if (!t || t.phase !== "draw" || !t.draw || t.draw.pending) return [];
+          const results = draw.drawAll(t.draw, t.settings.allowRepeatTeams);
+          let d = t.draw;
+          const assignments = { ...t.assignments };
+          const history = [...t.drawHistory];
+          for (const r of results) {
+            const res = draw.confirmPick({ ...d, pending: { ...r, at: Date.now() } }, t.settings.allowRepeatTeams);
+            if (!res) break;
+            d = res.state;
+            assignments[r.participantId] = r.teamId;
+            history.push(res.record);
+          }
+          mutate((x) => ({ ...x, draw: d, assignments, drawHistory: history }));
+          return results;
+        },
 
         resetDraw: () => {
           if (!editable()) return;
@@ -194,9 +279,12 @@ export const useTournament = create<State>()(
 
         startTournament: () => {
           const t = get().current;
-          if (!t || t.phase !== "draw") return "Primero realiza el sorteo.";
+          if (!t || t.phase !== "draw" || !t.draw) return "Primero realiza el sorteo.";
+          if (!draw.isDrawComplete(t.draw)) return "El sorteo aún no ha terminado.";
           const ids = t.participants.map((p) => p.id);
-          if (!draw.validateAssignments(t.assignments, ids, t.settings.allowRepeatTeams)) return "Faltan participantes por recibir equipo.";
+          const catErr = tournamentCategoryError(t);
+          if (catErr) return catErr;
+          if (!draw.validateAssignments(t.assignments, ids, t.settings.allowRepeatTeams, t.settings.category)) return "Faltan participantes por recibir equipo.";
           mutate((x) => ({ ...x, phase: "playing", matches: engine.buildMatches(x), championId: null }));
           return null;
         },
@@ -218,14 +306,16 @@ export const useTournament = create<State>()(
           const { history, current } = get();
           const t = history.find((h) => h.id === id);
           if (!t) return;
-          set({ current: t, history: archive(history.filter((h) => h.id !== id), current) });
+          set({ current: normalizeTournament(t), history: archive(history.filter((h) => h.id !== id), current) });
         },
 
         deleteFromHistory: (id) => set({ history: get().history.filter((h) => h.id !== id) }),
 
         importTournament: (data) => {
           if (!isTournament(data)) return "El archivo no es un torneo válido.";
-          const t = { ...data, id: uid("t"), updatedAt: Date.now() };
+          const t = normalizeTournament({ ...data, id: uid("t"), updatedAt: Date.now() });
+          const err = tournamentCategoryError(t);
+          if (err) return `El torneo importado no es válido: ${err}`;
           set({ current: t, history: archive(get().history, get().current) });
           return null;
         },
@@ -238,9 +328,20 @@ export const useTournament = create<State>()(
       };
     },
     {
-      name: "fc25-tournament-manager",
-      version: 1,
-      storage: createJSONStorage(() => localStorage),
+      name: STORAGE_KEY,
+      version: 2,
+      storage: createJSONStorage(() => storage),
+      partialize: (s) => ({ current: s.current, history: s.history, sound: s.sound }),
+      migrate: (persisted) => persisted as State,
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<State>;
+        return {
+          ...current,
+          ...p,
+          current: p.current ? normalizeTournament(p.current) : null,
+          history: (p.history ?? []).map(normalizeTournament),
+        };
+      },
       onRehydrateStorage: () => (state) => setSoundEnabled(!!state?.sound),
     },
   ),

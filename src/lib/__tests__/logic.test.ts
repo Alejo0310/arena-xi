@@ -3,12 +3,12 @@ import { generateLeague, computeStandings, restingInRound } from "../tournament/
 import { bracketSize, generateKnockout, seedOrder, dependentMatches } from "../tournament/knockout";
 import { recordResult, resetResult, buildMatches } from "../tournament/engine";
 import { computeStats, historicalRanking } from "../tournament/stats";
-import { buildPots, commitPick, drawAll, drawError, initDraw, rollTeam, validateAssignments } from "../draw";
-import { TEAMS, DEFAULT_POOL } from "../teams";
+import { buildPots, confirmPick, decidePick, drawAll, drawError, initDraw, validateAssignments } from "../draw";
+import { CLUBS, DEFAULT_CLUB_POOL } from "../teams";
 import type { Participant, Tournament, TournamentSettings } from "../types";
 
 const settings: TournamentSettings = {
-  format: "league", legs: 1, thirdPlace: true, tiebreak: "gd",
+  format: "league", category: "club", legs: 1, thirdPlace: true, tiebreak: "gd",
   points: { win: 3, draw: 1, loss: 0 }, allowRepeatTeams: false, matchMinutes: 12,
 };
 
@@ -19,7 +19,7 @@ function people(n: number): Participant[] {
 function tournament(n: number, over: Partial<TournamentSettings> = {}): Tournament {
   const t: Tournament = {
     id: "t", name: "Test", createdAt: 0, updatedAt: 0, phase: "playing",
-    settings: { ...settings, ...over }, participants: people(n), teamPool: [...DEFAULT_POOL],
+    settings: { ...settings, ...over }, participants: people(n), teamPool: [...DEFAULT_CLUB_POOL],
     assignments: {}, drawHistory: [], draw: null, matches: [], championId: null,
   };
   return { ...t, matches: buildMatches(t) };
@@ -196,29 +196,26 @@ describe("sorteo", () => {
       const t = base(8);
       let s = initDraw(t, mode);
       const assignments: Record<string, string> = {};
-      // Mitad uno a uno, el resto con sorteo completo.
+      // Mitad uno a uno (decidir → confirmar), el resto con sorteo completo.
       for (let k = 0; k < 4; k++) {
         const pid = s.order[s.cursor];
-        let team: string;
-        let env: number | undefined;
-        if (mode === "envelopes") {
-          env = s.envelopes!.findIndex((e) => e);
-          team = s.envelopes![env]!;
-        } else if (mode === "draft") {
-          expect(s.draftOptions!.length).toBeGreaterThan(0);
-          team = s.draftOptions![0];
-        } else team = rollTeam(s);
-        expect(s.pool.includes(team) || mode === "envelopes").toBe(true);
-        assignments[pid] = team;
-        s = commitPick(s, team, false, env);
+        const choice = mode === "envelopes" ? { envelopeIndex: s.envelopes!.findIndex((e) => e) } : mode === "draft" ? { teamId: s.draftOptions![0] } : {};
+        const { pending } = decidePick(s, "club", choice);
+        expect(pending?.participantId).toBe(pid);
+        s = { ...s, pending };
+        // Mientras hay un pendiente, el turno no cambia y no se puede volver a sortear.
+        expect(s.order[s.cursor]).toBe(pid);
+        expect(decidePick(s, "club", choice).error).toBeTruthy();
+        assignments[pid] = pending!.teamId;
+        s = confirmPick(s, false)!.state;
       }
       for (const a of drawAll(s, false)) assignments[a.participantId] = a.teamId;
-      expect(validateAssignments(assignments, t.participants.map((p) => p.id), false)).toBe(true);
+      expect(validateAssignments(assignments, t.participants.map((p) => p.id), false, "club")).toBe(true);
     }
   });
 
   it("bombos agrupan por nivel y fusionan el bombo incompleto", () => {
-    const pots = buildPots(TEAMS.map((t) => t.id), 8);
+    const pots = buildPots(CLUBS.map((t) => t.id), 8);
     expect(pots.map((p) => p.length)).toEqual([8, 8, 10]);
     expect(pots[0][0]).toBe("real-madrid");
   });

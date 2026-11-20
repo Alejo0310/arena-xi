@@ -3,9 +3,12 @@ import { shuffle } from "../random";
 import { generateLeague, computeStandings } from "./league";
 import { generateKnockout, knockoutChampion, resolveKnockout } from "./knockout";
 import { applyResult, clearResult, type ResultInput, validateResult } from "./match";
+import { tournamentCategoryError } from "../category";
 
 /** Genera los partidos según la modalidad. El orden de siembra/calendario es aleatorio. */
 export function buildMatches(t: Tournament): Match[] {
+  const err = tournamentCategoryError(t);
+  if (err) throw new Error(err);
   const ids = shuffle(t.participants.map((p) => p.id));
   return t.settings.format === "league"
     ? generateLeague(ids, t.settings.legs)
@@ -41,6 +44,9 @@ export function recordResult(t: Tournament, matchId: string, r: ResultInput): { 
   const m = t.matches.find((x) => x.id === matchId);
   if (!m) return { error: "Partido no encontrado." };
   if (m.isBye) return { error: "Los descansos no admiten resultado." };
+  // Nunca se registra un partido entre equipos de categorías distintas.
+  const catErr = tournamentCategoryError(t);
+  if (catErr) return { error: catErr };
   const err = validateResult(m, r, knockout);
   if (err) return { error: err };
   const matches = t.matches.map((x) => (x.id === matchId ? applyResult(x, r, knockout) : x));

@@ -5,6 +5,17 @@ export type DrawMode = "roulette" | "envelopes" | "machine" | "draft" | "pots";
 export type MatchStatus = "pending" | "live" | "done";
 export type LeagueTiebreak = "gd" | "h2h";
 export type Phase = "setup" | "draw" | "playing" | "finished";
+/** Categoría de equipos de un torneo. Clubes y selecciones nunca se mezclan. */
+export type TeamKind = "club" | "national";
+
+/** Bandera simplificada (franjas + adorno opcional) para selecciones. */
+export interface FlagSpec {
+  layout: "h" | "v";
+  stripes: string[];
+  ratios?: number[];
+  emblem?: "cross" | "sun" | "star" | "checker";
+  emblemColor?: string;
+}
 
 export interface Participant {
   id: string;
@@ -14,11 +25,13 @@ export interface Participant {
 
 export interface Team {
   id: string;
+  kind: TeamKind;
   /** Nombre tal como aparece en FC 25 (p. ej. "Lombardia FC"). */
   name: string;
   /** Nombre real del club cuando FC 25 usa un nombre sin licencia. */
   realName?: string;
   short: string;
+  /** Liga (clubes) o confederación (selecciones). */
   league: string;
   country: string;
   ovr: number;
@@ -26,11 +39,14 @@ export interface Team {
   mid: number;
   def: number;
   colors: [string, string];
+  flag?: FlagSpec;
   source: string;
 }
 
 export interface TournamentSettings {
   format: TournamentFormat;
+  /** Categoría única de equipos del torneo. */
+  category: TeamKind;
   /** Liga: partidos a una o dos vueltas. */
   legs: 1 | 2;
   /** Eliminatorias: partido por el tercer puesto. */
@@ -81,7 +97,17 @@ export interface DrawRecord {
   envelopeIndex?: number;
 }
 
+/** Resultado ya decidido (y guardado) que aún no se ha confirmado tras la animación. */
+export interface PendingPick {
+  participantId: string;
+  teamId: string;
+  envelopeIndex?: number;
+  at: number;
+}
+
 export interface DrawState {
+  /** Identificador de la sesión de sorteo (cambia al reiniciar). */
+  id: string;
   mode: DrawMode;
   /** Orden aleatorio en el que participan los jugadores. */
   order: string[];
@@ -95,6 +121,8 @@ export interface DrawState {
   /** Bombos: equipos agrupados por nivel. */
   pots?: string[][];
   potIndex?: number;
+  /** Sorteo decidido pendiente de confirmar: el cursor no avanza hasta "Continuar". */
+  pending?: PendingPick | null;
 }
 
 export interface Tournament {

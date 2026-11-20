@@ -3,7 +3,7 @@
 import { animate } from "motion/react";
 import { useState } from "react";
 import { LayoutGrid } from "lucide-react";
-import { getTeam } from "@/lib/teams";
+import { getTeam, fmtRating } from "@/lib/teams";
 import { play } from "@/lib/sound";
 import { prefersReducedMotion } from "@/lib/fx";
 import { Button } from "@/components/ui/Button";
@@ -51,7 +51,7 @@ export default function Pots(props: StageProps & { pots: string[][]; potIndex: n
     <div className="w-full">
       <div className="mb-5 flex flex-wrap justify-center gap-2" role="tablist" aria-label="Bombos">
         {pots.map((p, i) => {
-          const ratings = p.map((id) => getTeam(id)!.ovr);
+          const ratings = p.map((id) => getTeam(id)!.ovr ?? 0);
           return (
             <button
               key={i}
@@ -82,7 +82,7 @@ export default function Pots(props: StageProps & { pots: string[][]; potIndex: n
               <TeamCrest team={t} size={34} />
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{t.name}</div>
-                <div className="num text-xs text-neon">{t.ovr}</div>
+                <div className="num text-xs text-neon">{fmtRating(t.ovr)}</div>
               </div>
             </div>
           );

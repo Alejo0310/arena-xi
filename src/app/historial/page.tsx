@@ -7,6 +7,7 @@ import { Crown, FolderOpen, History, Medal, Trash2, Upload } from "lucide-react"
 import { allTournaments, useTournament } from "@/store/tournament";
 import { historicalRanking } from "@/lib/tournament/stats";
 import { getTeam } from "@/lib/teams";
+import { categoryLabel } from "@/lib/editions";
 import { phaseHref, PHASE_LABEL } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader, PlayerDot, SectionHeader, useHydrated } from "@/components/ui/bits";
@@ -93,10 +94,10 @@ export default function HistoryPage() {
                     <div className="min-w-0">
                       <div className="text-xs uppercase tracking-widest text-mute">
                         {isCurrent && <span className="text-neon">Actual · </span>}
-                        {PHASE_LABEL[t.phase]} · {new Date(t.createdAt).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })}
+                        <span className="text-neon" data-edition-badge>{(t.settings.edition ?? "FC25").replace("FC", "FC ")}</span> · {PHASE_LABEL[t.phase]} · {new Date(t.createdAt).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })}
                       </div>
                       <h3 className="display truncate text-2xl font-extrabold">{t.name}</h3>
-                      <div className="text-sm text-soft">{t.settings.format === "league" ? "Liga" : "Eliminatorias"} · {t.participants.length} jugadores · {played} partidos</div>
+                      <div className="text-sm text-soft">{categoryLabel(t.settings.category, t.settings.gender ?? "men")} · {t.settings.format === "league" ? "Liga" : "Eliminatorias"} · {t.participants.length} jugadores · {played} partidos</div>
                     </div>
                     {champ ? <Medal className="size-7 shrink-0 text-gold" /> : null}
                   </div>
@@ -104,8 +105,8 @@ export default function HistoryPage() {
                     <div className="mt-3 flex items-center gap-2 rounded-lg bg-gold/10 px-3 py-2 text-sm">
                       <Crown className="size-4 text-gold" />
                       <span className="font-bold">{champ.name}</span>
-                      <TeamCrest team={getTeam(t.assignments[champ.id])} size={22} />
-                      <span className="truncate text-soft">{getTeam(t.assignments[champ.id])?.name}</span>
+                      <TeamCrest team={getTeam(t.assignments[champ.id], t.snapshot)} size={22} />
+                      <span className="truncate text-soft">{getTeam(t.assignments[champ.id], t.snapshot)?.name}</span>
                     </div>
                   )}
                   <div className="mt-4 flex gap-2">

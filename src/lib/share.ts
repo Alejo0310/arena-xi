@@ -9,7 +9,10 @@ import type { Tournament } from "./types";
 const lz = () => import("lz-string");
 
 export async function encodeTournament(t: Tournament): Promise<string> {
-  const snapshot: Tournament = { ...t, draw: null };
+  // Solo viajan los equipos realmente asignados: mantiene el enlace corto y conserva sus valoraciones.
+  const used = new Set(Object.values(t.assignments));
+  const snap = t.snapshot ? Object.fromEntries(Object.entries(t.snapshot).filter(([id]) => used.has(id))) : undefined;
+  const snapshot: Tournament = { ...t, draw: null, snapshot: snap };
   return (await lz()).compressToEncodedURIComponent(JSON.stringify(snapshot));
 }
 

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useHydrated } from "@/components/ui/bits";
 import { confirmDialog } from "@/components/ui/feedback";
 import { TeamCrest } from "@/components/ui/TeamCrest";
-import { TEAMS } from "@/lib/teams";
+import { TEAMS, fmtRating } from "@/lib/teams";
 import { phaseHref, PHASE_LABEL } from "@/lib/routes";
 import { HeroVisual } from "@/components/hero/HeroVisual";
 
@@ -49,7 +49,7 @@ export default function HomePage() {
         <div className="min-w-0">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="kicker flex items-center gap-2">
           <span className="size-1.5 animate-pulse-glow rounded-full bg-neon shadow-[0_0_10px_#3dff8b]" />
-          ARENA XI · Torneos de EA SPORTS FC 25
+          ARENA XI · Torneos de EA SPORTS FC 25, 26 y 27
         </motion.div>
         <motion.h1
           initial={{ opacity: 0, y: 24 }}
@@ -123,7 +123,7 @@ export default function HomePage() {
             <div key={`${t.id}-${i}`} className="glass flex items-center gap-3 px-4 py-2.5">
               <TeamCrest team={t} size={30} />
               <span className="whitespace-nowrap font-semibold">{t.name}</span>
-              <span className="display text-xl font-extrabold text-neon">{t.ovr}</span>
+              <span className="display text-xl font-extrabold text-neon">{fmtRating(t.ovr)}</span>
             </div>
           ))}
         </div>

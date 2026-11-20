@@ -7,6 +7,15 @@ export type LeagueTiebreak = "gd" | "h2h";
 export type Phase = "setup" | "draw" | "playing" | "finished";
 /** Categoría de equipos de un torneo. Clubes y selecciones nunca se mezclan. */
 export type TeamKind = "club" | "national";
+/** Edición del videojuego. Cada una tiene su propio catálogo, aislado de las demás. */
+export type GameEdition = "FC25" | "FC26" | "FC27";
+export type Gender = "men" | "women";
+/**
+ * Estado de licencia según las fuentes consultadas:
+ * licensed = nombre, escudo y equipación oficiales; generic = disponible con nombre/escudo/equipación genéricos;
+ * unknown = disponible pero la licencia no se ha podido verificar.
+ */
+export type LicenseStatus = "licensed" | "generic" | "unknown";
 
 /** Bandera simplificada (franjas + adorno opcional) para selecciones. */
 export interface FlagSpec {
@@ -24,8 +33,16 @@ export interface Participant {
 }
 
 export interface Team {
+  /** Único entre ediciones (los de FC 26/27 llevan prefijo de edición). */
   id: string;
   kind: TeamKind;
+  /** Edición a la que pertenece el equipo. Ausente = FC25 (datos anteriores a la multiversión). */
+  edition?: GameEdition;
+  gender?: Gender;
+  continent?: string;
+  license?: LicenseStatus;
+  /** Etiqueta de novedad solo cuando una fuente verifica que es nuevo en esta edición. */
+  newIn?: GameEdition;
   /** Nombre tal como aparece en FC 25 (p. ej. "Lombardia FC"). */
   name: string;
   /** Nombre real del club cuando FC 25 usa un nombre sin licencia. */
@@ -34,10 +51,11 @@ export interface Team {
   /** Liga (clubes) o confederación (selecciones). */
   league: string;
   country: string;
-  ovr: number;
-  att: number;
-  mid: number;
-  def: number;
+  /** Valoraciones. `null` = sin valoración verificable (nunca se inventan). */
+  ovr: number | null;
+  att: number | null;
+  mid: number | null;
+  def: number | null;
   colors: [string, string];
   flag?: FlagSpec;
   source: string;
@@ -47,6 +65,10 @@ export interface TournamentSettings {
   format: TournamentFormat;
   /** Categoría única de equipos del torneo. */
   category: TeamKind;
+  /** Edición del videojuego del torneo. Ausente = FC25 (torneos antiguos). */
+  edition?: GameEdition;
+  /** Género de los equipos (clubes o selecciones). Ausente = masculino. */
+  gender?: Gender;
   /** Liga: partidos a una o dos vueltas. */
   legs: 1 | 2;
   /** Eliminatorias: partido por el tercer puesto. */
@@ -135,6 +157,11 @@ export interface Tournament {
   participants: Participant[];
   /** Equipos habilitados para el sorteo. */
   teamPool: string[];
+  /**
+   * Instantánea de los equipos usados (datos y valoraciones tal como eran al crear el torneo).
+   * Garantiza que actualizar un catálogo no altera torneos históricos.
+   */
+  snapshot?: Record<string, Team>;
   assignments: Record<string, string>;
   drawHistory: DrawRecord[];
   draw: DrawState | null;

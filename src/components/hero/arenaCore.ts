@@ -185,7 +185,7 @@ function cardTexture(team: Team, font: string): CanvasTexture {
 
   g.fillStyle = "#3dff8b";
   g.font = `900 64px ${font}`;
-  g.fillText(String(team.ovr), W / 2, 238);
+  g.fillText(String(team.ovr ?? "—"), W / 2, 238);
   g.fillStyle = "#ffffff";
   g.font = `800 26px ${font}`;
   const name = team.name.length > 16 ? team.short : team.name.toUpperCase();

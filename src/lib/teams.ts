@@ -1,4 +1,4 @@
-import type { Team, TeamKind } from "./types";
+import type { GameEdition, Gender, Team, TeamKind } from "./types";
 
 /**
  * Base de datos de equipos de EA SPORTS FC 25.
@@ -19,7 +19,7 @@ export const TEAMS_SOURCE =
 
 const FI = "FIFA Index";
 
-export const CLUBS: Team[] = [
+const RAW_CLUBS: Team[] = [
   { kind: "club", id: "real-madrid", name: "Real Madrid", short: "RMA", league: "LaLiga", country: "España", ovr: 85, att: 88, mid: 86, def: 81, colors: ["#f5f5f5", "#d4af37"], source: FI },
   { kind: "club", id: "man-city", name: "Manchester City", short: "MCI", league: "Premier League", country: "Inglaterra", ovr: 85, att: 86, mid: 83, def: 79, colors: ["#6cabdd", "#1c2c5b"], source: FI },
   { kind: "club", id: "bayern", name: "FC Bayern München", short: "FCB", league: "Bundesliga", country: "Alemania", ovr: 84, att: 90, mid: 84, def: 82, colors: ["#dc052d", "#ffffff"], source: FI },
@@ -55,7 +55,7 @@ export const CLUBS: Team[] = [
  * por eso no aparecen. Bélgica existe en el juego, pero no se encontraron valoraciones
  * de FC 25 verificables y se omite hasta confirmarlas.
  */
-export const NATIONALS: Team[] = [
+const RAW_NATIONALS: Team[] = [
   { kind: "national", id: "nat-france", name: "Francia", short: "FRA", league: "UEFA", country: "Francia", ovr: 85, att: 86, mid: 83, def: 85, colors: ["#0055a4", "#ef4135"], flag: { layout: "v", stripes: ["#0055a4", "#ffffff", "#ef4135"] }, source: FI },
   { kind: "national", id: "nat-spain", name: "España", short: "ESP", league: "UEFA", country: "España", ovr: 84, att: 84, mid: 84, def: 82, colors: ["#aa151b", "#f1bf00"], flag: { layout: "h", stripes: ["#aa151b", "#f1bf00", "#aa151b"], ratios: [1, 2, 1] }, source: "FIFACM (FC 25)" },
   { kind: "national", id: "nat-germany", name: "Alemania", short: "GER", league: "UEFA", country: "Alemania", ovr: 84, att: 81, mid: 84, def: 84, colors: ["#111111", "#dd0000"], flag: { layout: "h", stripes: ["#111111", "#dd0000", "#ffce00"] }, source: "SoFIFA (17/7/2025)" },
@@ -68,22 +68,63 @@ export const NATIONALS: Team[] = [
   { kind: "national", id: "nat-morocco", name: "Marruecos", short: "MAR", league: "CAF", country: "Marruecos", ovr: 79, att: 81, mid: 77, def: 81, colors: ["#c1272d", "#006233"], flag: { layout: "h", stripes: ["#c1272d"], emblem: "star", emblemColor: "#006233" }, source: "SoFIFA (17/7/2025)" },
 ];
 
+const CONTINENT_BY_CONF: Record<string, string> = { UEFA: "Europa", CONMEBOL: "Sudamérica", CAF: "África", AFC: "Asia", CONCACAF: "Norteamérica", OFC: "Oceanía" };
+
+/** Equipos valorados de FC 25 (masculinos). La licencia se completa al cargar el catálogo de FC 25. */
+export const CLUBS: Team[] = RAW_CLUBS.map((t) => ({ ...t, edition: "FC25", gender: "men", continent: "Europa", ...(t.realName ? { license: "generic" as const } : {}) }));
+export const NATIONALS: Team[] = RAW_NATIONALS.map((t) => ({ ...t, edition: "FC25", gender: "men", continent: CONTINENT_BY_CONF[t.league] ?? "Otros" }));
 export const TEAMS: Team[] = [...CLUBS, ...NATIONALS];
 
-const BY_ID = new Map(TEAMS.map((t) => [t.id, t]));
+/*
+ * Registro de equipos. Los 36 equipos valorados de FC 25 están siempre disponibles (síncronos);
+ * los catálogos completos de cada edición se cargan bajo demanda (ver catalog.ts) y se registran aquí.
+ * Los ids son únicos entre ediciones, así que nunca se mezclan datos de ediciones distintas.
+ */
+const REGISTRY = new Map<string, Team>(TEAMS.map((t) => [t.id, t]));
+/** Instantánea del torneo activo: tiene prioridad sobre el catálogo vivo. */
+let activeSnapshot: Record<string, Team> | undefined;
 
-export function getTeam(id: string | null | undefined): Team | undefined {
-  return id ? BY_ID.get(id) : undefined;
+export function registerTeams(list: readonly Team[]) {
+  for (const t of list) if (!REGISTRY.has(t.id)) REGISTRY.set(t.id, t);
 }
 
+export function setActiveSnapshot(snap?: Record<string, Team>) {
+  activeSnapshot = snap;
+}
+
+/** Busca un equipo: primero en la instantánea indicada (o la del torneo activo) y luego en el catálogo. */
+export function getTeam(id: string | null | undefined, snapshot?: Record<string, Team>): Team | undefined {
+  if (!id) return undefined;
+  return snapshot?.[id] ?? activeSnapshot?.[id] ?? REGISTRY.get(id);
+}
+
+/** Copia congelada de los equipos indicados, para guardarla en el torneo. */
+export function snapshotOf(ids: Iterable<string>, previous?: Record<string, Team>): Record<string, Team> {
+  const out: Record<string, Team> = {};
+  for (const id of ids) {
+    const t = previous?.[id] ?? REGISTRY.get(id);
+    if (t) out[id] = { ...t, colors: [...t.colors] as [string, string], flag: t.flag ? { ...t.flag } : undefined };
+  }
+  return out;
+}
+
+const rank = (t: Team) => (t.ovr ?? -1) * 1000 + (t.att ?? 0) + (t.mid ?? 0) + (t.def ?? 0);
+
+/** Ordena de mayor a menor valoración; los equipos sin valoración quedan al final (por nombre). */
 export function sortByRating(ids: readonly string[]): string[] {
   return [...ids].sort((a, b) => {
-    const ta = BY_ID.get(a)!;
-    const tb = BY_ID.get(b)!;
-    return tb.ovr - ta.ovr || tb.att + tb.mid + tb.def - (ta.att + ta.mid + ta.def) || ta.name.localeCompare(tb.name);
+    const ta = getTeam(a)!;
+    const tb = getTeam(b)!;
+    return rank(tb) - rank(ta) || ta.name.localeCompare(tb.name);
   });
 }
 
+/** Texto de una valoración: el número o "—" si no existe una valoración verificada. */
+export const fmtRating = (n: number | null | undefined): string => (n == null ? "—" : String(n));
+export const isRated = (t: Team | undefined): t is Team & { ovr: number; att: number; mid: number; def: number } =>
+  !!t && t.ovr != null && t.att != null && t.mid != null && t.def != null;
+
+/** Equipos estáticos de FC 25 por categoría (compatibilidad). El catálogo completo está en catalog.ts. */
 export function teamsOf(kind: TeamKind): Team[] {
   return kind === "club" ? CLUBS : NATIONALS;
 }
@@ -94,9 +135,14 @@ export const DEFAULT_CLUB_POOL = sortByRating([
   "barcelona", "psg", "leverkusen", "atletico", "dortmund", "juventus",
 ]);
 
-/** Selección inicial de selecciones: todas las disponibles. */
+/** Selección inicial de selecciones: todas las valoradas de FC 25. */
 export const DEFAULT_NATIONAL_POOL = sortByRating(NATIONALS.map((t) => t.id));
 
-export function defaultPool(kind: TeamKind): string[] {
+/**
+ * Selección inicial. Solo FC 25 masculino tiene equipos valorados de serie; en el resto
+ * de categorías/ediciones el torneo empieza sin equipos y el usuario los elige del catálogo.
+ */
+export function defaultPool(kind: TeamKind, edition: GameEdition = "FC25", gender: Gender = "men"): string[] {
+  if (edition !== "FC25" || gender !== "men") return [];
   return kind === "club" ? [...DEFAULT_CLUB_POOL] : [...DEFAULT_NATIONAL_POOL];
 }

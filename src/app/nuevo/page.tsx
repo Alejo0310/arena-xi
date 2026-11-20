@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/Button";
 import { Loader, PlayerDot, SectionHeader, useHydrated } from "@/components/ui/bits";
 import { confirmDialog, toast } from "@/components/ui/feedback";
 import { TeamBrowser } from "@/components/teams/TeamBrowser";
-import { useCategoryChange } from "@/components/teams/useCategoryChange";
-import { CATEGORY_LABEL } from "@/lib/category";
+import { useCategoryChange, useEditionChange } from "@/components/teams/useCategoryChange";
+import { EditionSelector } from "@/components/teams/EditionSelector";
+import { categoryLabel, editionInfo } from "@/lib/editions";
 import { generateTournamentName, PLAYER_COLORS } from "@/lib/names";
 import { bracketSize } from "@/lib/tournament/knockout";
 import type { Participant, TournamentSettings } from "@/lib/types";
@@ -53,6 +54,9 @@ function SetupForm({ onDone }: { onDone: () => void }) {
   const rename = useTournament((s) => s.rename);
   const setPool = useTournament((s) => s.setPool);
   const changeCategory = useCategoryChange();
+  const changeEdition = useEditionChange();
+  const edition = t.settings.edition ?? "FC25";
+  const gender = t.settings.gender ?? "men";
   const resetDraw = useTournament((s) => s.resetDraw);
   const n = t.participants.length;
 
@@ -80,9 +84,17 @@ function SetupForm({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
+      {/* Edición del videojuego */}
+      <section>
+        <div className="kicker mb-3">Paso 1 · Selecciona tu FC</div>
+        <h2 className="display mb-1 text-3xl font-extrabold">SELECCIONA TU FC</h2>
+        <p className="mb-4 text-sm text-mute">La edición define los clubes, selecciones y valoraciones disponibles. Se mantiene durante todo el torneo.</p>
+        <EditionSelector value={edition} onChange={changeEdition} />
+      </section>
+
       {/* Nombre */}
       <section>
-        <div className="kicker mb-3">Paso 1 · Identidad</div>
+        <div className="kicker mb-3">Paso 2 · Identidad</div>
         <div className="glass flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
           <label className="flex-1">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-mute">Nombre del torneo</span>
@@ -98,11 +110,13 @@ function SetupForm({ onDone }: { onDone: () => void }) {
       <Format />
 
       <section>
-        <div className="kicker mb-3">Paso 4 · Categoría y equipos del sorteo</div>
-        <SectionHeader title={`Torneo de ${CATEGORY_LABEL[t.settings.category].toLowerCase()} · ${t.teamPool.length} seleccionados`} />
-        <p className="-mt-3 mb-4 text-sm text-mute">Todos los participantes juegan con equipos de la misma categoría: clubes contra clubes o selecciones contra selecciones.</p>
+        <div className="kicker mb-3">Paso 5 · Categoría y equipos del sorteo</div>
+        <SectionHeader title={`${categoryLabel(t.settings.category, gender)} · ${editionInfo(edition).label} · ${t.teamPool.length} seleccionados`} />
+        <p className="-mt-3 mb-4 text-sm text-mute">Todos los participantes juegan con equipos de la misma edición y categoría: clubes contra clubes o selecciones contra selecciones, sin mezclar masculinos y femeninos.</p>
         <TeamBrowser
-          category={t.settings.category}
+          edition={edition}
+          kind={t.settings.category}
+          gender={gender}
           onCategoryChange={changeCategory}
           selected={t.teamPool}
           onChange={(ids) => {
@@ -118,7 +132,7 @@ function SetupForm({ onDone }: { onDone: () => void }) {
             {problems.length ? (
               <span className="flex items-center gap-2 text-blaze"><AlertTriangle className="size-4 shrink-0" /> {problems[0]}</span>
             ) : (
-              <span className="flex items-center gap-2 text-neon"><Check className="size-4" /> Todo listo: {n} jugadores, {t.settings.format === "league" ? "liga" : "eliminatorias"}, {t.teamPool.length} {CATEGORY_LABEL[t.settings.category].toLowerCase()}.</span>
+              <span className="flex items-center gap-2 text-neon"><Check className="size-4" /> Todo listo: {n} jugadores, {t.settings.format === "league" ? "liga" : "eliminatorias"}, {t.teamPool.length} equipos de {editionInfo(edition).label}.</span>
             )}
           </div>
           <Button size="lg" onClick={goDraw} disabled={problems.length > 0} className="w-full sm:w-auto">
@@ -175,7 +189,7 @@ function Participants() {
 
   return (
     <section>
-      <div className="kicker mb-3">Paso 2 · Participantes</div>
+      <div className="kicker mb-3">Paso 3 · Participantes</div>
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="glass p-5">
           <form onSubmit={submit} className="flex gap-2">
@@ -312,7 +326,7 @@ function Format() {
 
   return (
     <section>
-      <div className="kicker mb-3">Paso 3 · Modalidad y reglas</div>
+      <div className="kicker mb-3">Paso 4 · Modalidad y reglas</div>
       <div className="grid gap-4 md:grid-cols-2">
         <FormatCard active={s.format === "league"} onClick={() => update({ format: "league" })} icon={<ListOrdered className="size-7" />} title="Liga" text="Todos contra todos. Puntos, tabla y campeón por regularidad." />
         <FormatCard active={s.format === "knockout"} onClick={() => update({ format: "knockout" })} icon={<GitBranch className="size-7" />} title="Eliminatorias" text="Llaves a partido único. Quien pierde, se va a casa." />

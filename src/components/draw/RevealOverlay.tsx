@@ -1,5 +1,6 @@
 "use client";
 
+import { fmtRating } from "@/lib/teams";
 import { motion, useAnimate } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, SkipForward } from "lucide-react";
@@ -105,7 +106,7 @@ export function RevealOverlay({ participant, team, stage, runId, position, conti
             {team.realName && <div className="text-sm text-mute">{team.realName}</div>}
             <div className="mt-5 flex w-full max-w-sm items-center gap-5">
               <div>
-                <div className="display text-6xl font-black text-neon">{team.ovr}</div>
+                <div className="display text-6xl font-black text-neon">{fmtRating(team.ovr)}</div>
                 <div className="text-[0.65rem] font-bold uppercase tracking-widest text-mute">Media</div>
               </div>
               <div className="flex-1 space-y-1.5">

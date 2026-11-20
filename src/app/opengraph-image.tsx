@@ -22,7 +22,7 @@ export default function OpengraphImage() {
           fontFamily: "sans-serif",
         }}
       >
-        <div style={{ display: "flex", fontSize: 28, letterSpacing: 10, color: "#3dff8b", fontWeight: 700 }}>SORTEOS Y TORNEOS · EA SPORTS FC 25</div>
+        <div style={{ display: "flex", fontSize: 28, letterSpacing: 10, color: "#3dff8b", fontWeight: 700 }}>SORTEOS Y TORNEOS · EA SPORTS FC 25 · 26 · 27</div>
         <div style={{ display: "flex", fontSize: 190, fontWeight: 900, fontStyle: "italic", letterSpacing: -4, lineHeight: 1, marginTop: 20 }}>
           ARENA&nbsp;<span style={{ color: "#3dff8b" }}>XI</span>
         </div>

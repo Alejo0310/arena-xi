@@ -9,7 +9,7 @@ import { Disc3, Mail, Dices, Layers, LayoutGrid, Zap, RotateCcw, Play, Clapperbo
 import { useTournament } from "@/store/tournament";
 import { DRAW_MODES } from "@/lib/draw";
 import { CATEGORY_LABEL } from "@/lib/category";
-import { getTeam } from "@/lib/teams";
+import { getTeam, fmtRating } from "@/lib/teams";
 import type { DrawMode, Tournament } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader, PlayerDot, SectionHeader, useHydrated } from "@/components/ui/bits";
@@ -323,7 +323,7 @@ function CompletePanel({ t, onPresent, onBegin }: { t: Tournament; onPresent: ()
                 <div className="truncate font-bold">{p.name}</div>
                 <div className="truncate text-sm text-mute">{team?.name}</div>
               </div>
-              <div className="display text-2xl font-black text-neon">{team?.ovr}</div>
+              <div className="display text-2xl font-black text-neon">{fmtRating(team?.ovr)}</div>
             </motion.div>
           );
         })}
@@ -355,7 +355,7 @@ function AssignmentsSummary({ t }: { t: Tournament }) {
                 <div className="truncate font-bold">{p.name}</div>
                 <div className="truncate text-sm text-mute">{team?.name ?? "Sin equipo"}</div>
               </div>
-              {team && <div className="display text-3xl font-black text-neon">{team.ovr}</div>}
+              {team && <div className="display text-3xl font-black text-neon">{fmtRating(team.ovr)}</div>}
             </div>
           );
         })}

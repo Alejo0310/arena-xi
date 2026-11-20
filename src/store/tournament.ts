@@ -2,20 +2,23 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
-import type { DrawMode, Participant, PendingPick, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
+import type { DrawMode, GameEdition, Gender, Participant, PendingPick, Team, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
 import { uid } from "@/lib/random";
-import { defaultPool } from "@/lib/teams";
+import { defaultPool, getTeam, setActiveSnapshot, snapshotOf } from "@/lib/teams";
 import { PLAYER_COLORS, generateTournamentName } from "@/lib/names";
 import * as draw from "@/lib/draw";
 import * as engine from "@/lib/tournament/engine";
 import type { ResultInput } from "@/lib/tournament/match";
 import { setSoundEnabled } from "@/lib/sound";
 import { isTournament } from "@/lib/share";
-import { categoryError, isKind, sanitizePool, tournamentCategoryError } from "@/lib/category";
+import { categoryError, isKind, sanitizePool, scopeOf, tournamentCategoryError } from "@/lib/category";
+import { DEFAULT_EDITION, isEdition, isGender } from "@/lib/editions";
 
 export const DEFAULT_SETTINGS: TournamentSettings = {
   format: "league",
   category: "club",
+  edition: DEFAULT_EDITION,
+  gender: "men",
   legs: 1,
   thirdPlace: true,
   tiebreak: "gd",
@@ -39,7 +42,7 @@ function blankTournament(base?: Partial<Tournament>): Tournament {
     updatedAt: now,
     phase: "setup",
     participants: [],
-    teamPool: defaultPool(settings.category),
+    teamPool: defaultPool(settings.category, settings.edition, settings.gender),
     assignments: {},
     drawHistory: [],
     draw: null,
@@ -59,8 +62,11 @@ interface State {
 
   newTournament: (opts?: { keepParticipants?: boolean }) => void;
   rename: (name: string) => void;
-  updateSettings: (patch: Partial<Omit<TournamentSettings, "category">>) => void;
-  setCategory: (kind: TeamKind) => Err;
+  updateSettings: (patch: Partial<Omit<TournamentSettings, "category" | "edition" | "gender">>) => void;
+  /** Cambia categoría (y opcionalmente género). Reinicia la selección de equipos y el sorteo. */
+  setCategory: (kind: TeamKind, gender?: Gender) => Err;
+  /** Cambia la edición del juego. Reinicia la selección de equipos y el sorteo. */
+  setEdition: (edition: GameEdition) => Err;
   addParticipant: (name: string) => Err;
   editParticipant: (id: string, patch: Partial<Omit<Participant, "id">>) => Err;
   removeParticipant: (id: string) => void;
@@ -111,11 +117,24 @@ function invalidateDraw(t: Tournament): Tournament {
  * Normaliza un torneo cargado (localStorage, importación o versiones antiguas):
  * añade la categoría si falta y, si su estado mezcla categorías, descarta el sorteo.
  */
+/** Torneos guardados antes de las instantáneas: se congelan con los datos de FC 25 que usaban. */
+function legacySnapshot(t: Tournament): Record<string, Team> | undefined {
+  const ids = new Set<string>([...(t.teamPool ?? []), ...Object.values(t.assignments ?? {})]);
+  const snap = snapshotOf([...ids].filter((id) => getTeam(id)));
+  return Object.keys(snap).length ? snap : undefined;
+}
+
 export function normalizeTournament(raw: Tournament): Tournament {
-  const settings = { ...DEFAULT_SETTINGS, ...raw.settings, category: isKind(raw.settings?.category) ? raw.settings.category : "club" };
-  let t: Tournament = { ...raw, settings, draw: raw.draw ? { ...raw.draw, id: raw.draw.id ?? uid("d"), pending: raw.draw.pending ?? null } : null };
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    ...raw.settings,
+    category: isKind(raw.settings?.category) ? raw.settings.category : "club",
+    edition: isEdition(raw.settings?.edition) ? raw.settings.edition : DEFAULT_EDITION,
+    gender: isGender(raw.settings?.gender) ? raw.settings.gender : "men",
+  } as TournamentSettings;
+  let t: Tournament = { ...raw, settings, snapshot: raw.snapshot ?? legacySnapshot(raw), draw: raw.draw ? { ...raw.draw, id: raw.draw.id ?? uid("d"), pending: raw.draw.pending ?? null } : null };
   if (tournamentCategoryError(t) && (t.phase === "setup" || t.phase === "draw")) {
-    t = { ...t, phase: "setup", draw: null, assignments: {}, drawHistory: [], teamPool: sanitizePool(t.teamPool, settings.category) };
+    t = { ...t, phase: "setup", draw: null, assignments: {}, drawHistory: [], teamPool: sanitizePool(t.teamPool, scopeOf(settings)) };
   }
   return t;
 }
@@ -150,7 +169,7 @@ export const useTournament = create<State>()(
           set({
             history: archive(get().history, prev),
             current: blankTournament(
-              keep ? { participants: prev.participants, settings: prev.settings, teamPool: sanitizePool(prev.teamPool, prev.settings.category) } : undefined,
+              keep ? { participants: prev.participants, settings: prev.settings, teamPool: sanitizePool(prev.teamPool, scopeOf(prev.settings)) } : undefined,
             ),
           });
         },
@@ -160,24 +179,49 @@ export const useTournament = create<State>()(
         updateSettings: (patch) => {
           if (!editable()) return;
           // La categoría solo cambia mediante setCategory (que reinicia el pool).
-          const { category: _ignored, ...safe } = patch as Partial<TournamentSettings>;
-          void _ignored;
+          const { category: _c, edition: _e, gender: _g, ...safe } = patch as Partial<TournamentSettings>;
+          void _c;
+          void _e;
+          void _g;
           mutate((t) => invalidateDraw({ ...t, settings: { ...t.settings, ...safe } }));
         },
 
-        setCategory: (kind) => {
+        setCategory: (kind, gender) => {
           const t = editable();
           if (!t) return "El torneo ya ha comenzado: la categoría no se puede cambiar.";
           if (!isKind(kind)) return "Categoría no válida.";
-          if (t.settings.category === kind) return null;
+          const g = gender ?? t.settings.gender ?? "men";
+          if (!isGender(g)) return "Género no válido.";
+          if (t.settings.category === kind && (t.settings.gender ?? "men") === g) return null;
+          const pool = defaultPool(kind, t.settings.edition ?? DEFAULT_EDITION, g);
           mutate((x) => ({
             ...x,
             phase: "setup",
             draw: null,
             assignments: {},
             drawHistory: [],
-            settings: { ...x.settings, category: kind },
-            teamPool: defaultPool(kind),
+            settings: { ...x.settings, category: kind, gender: g },
+            teamPool: pool,
+            snapshot: snapshotOf(pool),
+          }));
+          return null;
+        },
+
+        setEdition: (edition) => {
+          const t = editable();
+          if (!t) return "El torneo ya ha comenzado: la edición no se puede cambiar.";
+          if (!isEdition(edition)) return "Edición no válida.";
+          if ((t.settings.edition ?? DEFAULT_EDITION) === edition) return null;
+          const pool = defaultPool(t.settings.category, edition, t.settings.gender ?? "men");
+          mutate((x) => ({
+            ...x,
+            phase: "setup",
+            draw: null,
+            assignments: {},
+            drawHistory: [],
+            settings: { ...x.settings, edition },
+            teamPool: pool,
+            snapshot: snapshotOf(pool),
           }));
           return null;
         },
@@ -215,9 +259,10 @@ export const useTournament = create<State>()(
         setPool: (ids) => {
           const t = editable();
           if (!t) return "El torneo ya ha comenzado.";
-          const err = categoryError(ids, t.settings.category);
+          const err = categoryError(ids, scopeOf(t.settings));
           if (err) return err;
-          mutate((x) => invalidateDraw({ ...x, teamPool: [...new Set(ids)] }));
+          const pool = [...new Set(ids)];
+          mutate((x) => invalidateDraw({ ...x, teamPool: pool, snapshot: snapshotOf(pool) }));
           return null;
         },
 
@@ -235,7 +280,7 @@ export const useTournament = create<State>()(
         drawDecide: (choice) => {
           const t = get().current;
           if (!t || t.phase !== "draw" || !t.draw) return { error: "No hay un sorteo en curso." };
-          const res = draw.decidePick(t.draw, t.settings.category, choice);
+          const res = draw.decidePick(t.draw, scopeOf(t.settings), choice);
           if (res.pending) mutate((x) => ({ ...x, draw: { ...x.draw!, pending: res.pending } }));
           return res;
         },
@@ -284,7 +329,7 @@ export const useTournament = create<State>()(
           const ids = t.participants.map((p) => p.id);
           const catErr = tournamentCategoryError(t);
           if (catErr) return catErr;
-          if (!draw.validateAssignments(t.assignments, ids, t.settings.allowRepeatTeams, t.settings.category)) return "Faltan participantes por recibir equipo.";
+          if (!draw.validateAssignments(t.assignments, ids, t.settings.allowRepeatTeams, scopeOf(t.settings))) return "Faltan participantes por recibir equipo.";
           mutate((x) => ({ ...x, phase: "playing", matches: engine.buildMatches(x), championId: null }));
           return null;
         },
@@ -351,3 +396,8 @@ export const useTournament = create<State>()(
 export function allTournaments(current: Tournament | null, history: Tournament[]): Tournament[] {
   return current ? [current, ...history.filter((h) => h.id !== current.id)] : history;
 }
+
+// El torneo activo manda: sus equipos congelados tienen prioridad sobre el catálogo vivo.
+useTournament.subscribe((s, prev) => {
+  if (s.current?.snapshot !== prev.current?.snapshot || s.current?.id !== prev.current?.id) setActiveSnapshot(s.current?.snapshot);
+});

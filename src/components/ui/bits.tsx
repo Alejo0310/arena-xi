@@ -102,8 +102,8 @@ export function EmptyState({ icon, title, body, action }: { icon: React.ReactNod
   );
 }
 
-export function RatingBar({ label, value, color = "bg-neon" }: { label: string; value: number; color?: string }) {
-  const pct = Math.max(0, Math.min(1, (value - 60) / 35));
+export function RatingBar({ label, value, color = "bg-neon" }: { label: string; value: number | null; color?: string }) {
+  const pct = value == null ? 0 : Math.max(0, Math.min(1, (value - 60) / 35));
   // CSS puro: sin observador ni componente de Motion por barra (en /equipos hay 78).
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -111,7 +111,7 @@ export function RatingBar({ label, value, color = "bg-neon" }: { label: string; 
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
         <div className={`h-full w-full origin-left rounded-full ${color} animate-[bar-grow_0.8s_cubic-bezier(0.16,1,0.3,1)]`} style={{ transform: `scaleX(${pct})` }} />
       </div>
-      <span className="num w-6 text-right font-bold">{value}</span>
+      <span className="num w-6 text-right font-bold">{value ?? "—"}</span>
     </div>
   );
 }

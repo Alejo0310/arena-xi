@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useAnimate } from "motion/react";
-import { getTeam } from "@/lib/teams";
+import { getTeam, fmtRating } from "@/lib/teams";
 import { prefersReducedMotion } from "@/lib/fx";
 import { play } from "@/lib/sound";
 import { TeamCrest } from "@/components/ui/TeamCrest";
@@ -42,11 +42,11 @@ export default function Draft(props: StageProps & { options: string[] }) {
                 disabled={locked}
                 className="relative w-[200px] overflow-hidden rounded-2xl border-2 p-5 text-left will-change-transform"
                 style={{ borderColor: `${t.colors[0]}88`, background: `linear-gradient(160deg, ${t.colors[0]}33, #0b0e13 55%)` }}
-                aria-label={`Elegir ${t.name}, media ${t.ovr}`}
+                aria-label={`Elegir ${t.name}, media ${fmtRating(t.ovr)}`}
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="display text-5xl font-black leading-none">{t.ovr}</div>
+                    <div className="display text-5xl font-black leading-none">{fmtRating(t.ovr)}</div>
                     <div className="text-[0.6rem] font-bold uppercase tracking-widest text-mute">Media</div>
                   </div>
                   <TeamCrest team={t} size={52} />

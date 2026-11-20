@@ -1,7 +1,7 @@
-import type { DrawMode, DrawRecord, DrawState, PendingPick, TeamKind, Tournament } from "./types";
+import type { DrawMode, DrawRecord, DrawState, PendingPick, Tournament } from "./types";
 import { pick, sample, shuffle, uid } from "./random";
-import { sortByRating } from "./teams";
-import { categoryError, sanitizePool, CATEGORY_LABEL } from "./category";
+import { getTeam, isRated, sortByRating } from "./teams";
+import { categoryError, sanitizePool, scopeOf, CATEGORY_LABEL, type ScopeLike } from "./category";
 
 /*
  * Lógica del sorteo, independiente de la UI.
@@ -37,19 +37,25 @@ export function buildPots(pool: readonly string[], size: number): string[][] {
 export function drawError(t: Tournament, mode: DrawMode): string | null {
   const n = t.participants.length;
   const kind = t.settings.category;
+  const scope = scopeOf(t.settings);
   if (n < 2) return "Se necesitan al menos 2 participantes.";
-  const catErr = categoryError(t.teamPool, kind);
+  const catErr = categoryError(t.teamPool, scope);
   if (catErr) return catErr;
   if (t.teamPool.length === 0) return `Selecciona al menos un equipo (${CATEGORY_LABEL[kind].toLowerCase()}) para el sorteo.`;
   if (!t.settings.allowRepeatTeams && t.teamPool.length < n)
     return `Hay ${n} participantes y solo ${t.teamPool.length} equipos. Añade equipos o permite repetidos.`;
   if (!DRAW_MODES.some((m) => m.id === mode)) return "Modalidad de sorteo desconocida.";
+  if (mode === "pots") {
+    const unrated = t.teamPool.filter((id) => !isRated(getTeam(id)));
+    if (unrated.length)
+      return `Los bombos se forman con las valoraciones: ${unrated.length} equipos no tienen valoración verificada en ${(t.settings.edition ?? "FC25").replace("FC", "FC ")}. Quítalos o usa otra modalidad.`;
+  }
   return null;
 }
 
 export function initDraw(t: Tournament, mode: DrawMode): DrawState {
   const order = shuffle(t.participants.map((p) => p.id));
-  const pool = sanitizePool(t.teamPool, t.settings.category);
+  const pool = sanitizePool(t.teamPool, scopeOf(t.settings));
   const state: DrawState = { id: uid("d"), mode, order, cursor: 0, pool, pending: null };
   if (mode === "pots") {
     state.pots = buildPots(pool, t.participants.length);
@@ -93,7 +99,7 @@ export interface Choice {
  * Decide el equipo del turno actual sin avanzar el cursor.
  * Valida la elección (sobre cerrado, carta repartida) y la categoría.
  */
-export function decidePick(state: DrawState, kind: TeamKind, choice: Choice = {}): { pending?: PendingPick; error?: string } {
+export function decidePick(state: DrawState, kind: ScopeLike, choice: Choice = {}): { pending?: PendingPick; error?: string } {
   if (state.pending) return { error: "Ya hay un sorteo en curso." };
   const participantId = currentParticipant(state);
   if (!participantId) return { error: "Todos los participantes ya tienen equipo." };
@@ -143,7 +149,7 @@ export function drawAll(state: DrawState, allowRepeats: boolean): { participantI
 }
 
 /** Asignaciones completas, sin repetidos (salvo permiso) y todas de la misma categoría. */
-export function validateAssignments(assignments: Record<string, string>, participantIds: string[], allowRepeats: boolean, kind: TeamKind): boolean {
+export function validateAssignments(assignments: Record<string, string>, participantIds: string[], allowRepeats: boolean, kind: ScopeLike): boolean {
   const teams = participantIds.map((id) => assignments[id]);
   if (teams.some((t) => !t)) return false;
   if (categoryError(teams, kind)) return false;

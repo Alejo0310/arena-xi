@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/feedback";
 import { TabBar, TournamentBody, type Tab } from "@/components/tournament/TournamentView";
 import { useRouter } from "next/navigation";
 import { phaseHref } from "@/lib/routes";
+import { setActiveSnapshot } from "@/lib/teams";
 
 /** Vista de solo lectura de un torneo recibido por enlace (datos en el fragmento #). */
 export default function SharedPage() {
@@ -26,6 +27,13 @@ export default function SharedPage() {
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, []);
+
+  // Un torneo compartido se muestra con los datos congelados que trae, no con el catálogo vivo.
+  useEffect(() => {
+    if (!t) return;
+    setActiveSnapshot(t.snapshot);
+    return () => setActiveSnapshot(useTournament.getState().current?.snapshot);
+  }, [t]);
 
   if (t === undefined) return <Loader />;
   if (t === null) {

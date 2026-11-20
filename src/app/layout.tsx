@@ -18,14 +18,14 @@ const barlow = Barlow({
 });
 
 const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000";
-const description = "ARENA XI: sorteos de equipos animados y torneos de EA SPORTS FC 25 entre amigos. Ligas, eliminatorias, clubes y selecciones. Que gane el mejor.";
+const description = "ARENA XI: sorteos de equipos animados y torneos de EA SPORTS FC 25, FC 26 y FC 27 entre amigos. Ligas, eliminatorias, clubes y selecciones. Que gane el mejor.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: { default: "ARENA XI · Que gane el mejor", template: "%s · ARENA XI" },
   description,
   applicationName: "ARENA XI",
-  keywords: ["EA SPORTS FC 25", "torneo", "sorteo de equipos", "liga", "eliminatorias", "FIFA", "ARENA XI"],
+  keywords: ["EA SPORTS FC 25", "EA SPORTS FC 26", "EA SPORTS FC 27", "torneo", "sorteo de equipos", "liga", "eliminatorias", "FIFA", "ARENA XI"],
   openGraph: {
     type: "website",
     siteName: "ARENA XI",

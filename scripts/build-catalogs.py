@@ -153,9 +153,126 @@ def build(ed):
     return {"clubs": res_c, "nationals": res_n}
 
 
+# ---------- Valoraciones aportadas (scripts/parse-ratings.py) ----------
+import difflib
+RATINGS_DIR = Path(__file__).resolve().parent.parent / "src" / "data" / "ratings"
+LEAGUE_COUNTRY = [  # prefijo de la liga en la lista -> país en español
+    ("Spain", "España"), ("England", "Inglaterra"), ("France", "Francia"), ("Germany", "Alemania"), ("Italy", "Italia"),
+    ("Holland", "Países Bajos"), ("Portugal", "Portugal"), ("Turkey", "Turquía"), ("Saudi", "Arabia Saudita"),
+    ("USA", "Estados Unidos"), ("Mexico", "México"), ("Argentina", "Argentina"), ("Scotland", "Escocia"),
+    ("Belgium", "Bélgica"), ("Denmark", "Dinamarca"), ("Norway", "Noruega"), ("Sweden", "Suecia"), ("Poland", "Polonia"),
+    ("Romania", "Rumanía"), ("Austria", "Austria"), ("Switzerland", "Suiza"), ("Australia", "Australia"),
+    ("China", "China"), ("Korea", "Corea del Sur"), ("Indian", "India"), ("Rep. Ireland", "Irlanda"),
+    ("Brazil", "Brasil"), ("Colombia", "Colombia"),
+]
+ES_CONT = {v[0]: v[1] for v in C.values()}
+WILD = "Resto del mundo"
+
+
+def rating_country(league):
+    for pre, es in LEAGUE_COUNTRY:
+        if league.startswith(pre):
+            return es
+    return WILD
+
+
+def rating_league(league, country):
+    for pre, es in LEAGUE_COUNTRY:
+        if league.startswith(pre):
+            return league[len(pre):].strip() or league
+    return {"-": "Sin liga (según la lista)"}.get(league, league)
+
+
+SAFE_SUFFIX = {"women", "femenino", "femenina", "femeni", "calcio", "praia", "sad", "bucuresti", "lorraine", "rotterdam", "63", "co", "alsace", "1909", "1913", "cfc", "fc"}
+# Nombres genéricos con los que FIFPlay lista a clubes que la base de valoraciones nombra con su nombre real.
+GENERIC_ALIAS = {"inter": "lombardiafc", "atalanta": "bergamocalcio", "monza": "brianzacalcio", "lazio": "latium", "milanofc": "milanofc"}
+
+
+# Nombre en la lista de valoraciones -> nombre en el catálogo de FIFPlay (mismo club, verificado a mano). Ignora el país.
+NAME_ALIAS = {
+    "Napoli": "SSC Napoli", "Roma": "AS Roma", "Lazio": "SS Lazio", "Gotham FC": "NY/NJ Gotham FC", "Lecce": "US Lecce",
+    "RAAL La Louvière": "La Louvière", "SpVgg Greuther Fürth": "Greuther Fürth", "Deportivo Riestra": "Dep. Riestra",
+    "Altach": "SCR Altach", "Melbourne Victory": "Mel. Victory", "Jahn Regensburg": "Regensburg",
+    "Wellington Phoenix": "Well. Phoenix", "TSV Havelse": "Havelse", "TSG 1899 Hoffenheim II": "Hoffenheim II",
+    "Benfica": "SL Benfica", "RB Salzburg": "FC Red Bull Salzburg", "Gimnasia y Esgrima de Mendoza": "Gimnasia de Mendoza",
+    "Tromsø IL": "Tromsø", "IK Start": "Start",
+}
+
+
+def apply_ratings(ed, clubs):
+    f = RATINGS_DIR / f"fc{ed}.json"
+    if not f.exists():
+        return clubs, None
+    rows = json.load(open(f, encoding="utf-8"))
+    by = {}
+    for i, c in enumerate(clubs):
+        by.setdefault((c["g"], slug(c["n"])), []).append(i)
+    used, fuzzy, added = set(), [], []
+
+    def compat(c, rc):
+        return rc == WILD or c["c"] == rc or c["c"] == WILD
+
+    for r in rows:
+        g, rc = ("w" if r["g"] == "w" else "m"), rating_country(r["l"])
+        sl = slug(r["n"])
+        cand = [i for i in by.get((g, sl), []) if i not in used and compat(clubs[i], rc)]
+        how = "exacto"
+        if not cand and NAME_ALIAS.get(r["n"]):
+            cand = [i for i, c in enumerate(clubs) if i not in used and c["g"] == g and c["n"] == NAME_ALIAS[r["n"]]]
+            how = "alias manual"
+        if not cand and g == "m" and GENERIC_ALIAS.get(sl):
+            cand = [i for i in by.get((g, GENERIC_ALIAS[sl]), []) if i not in used]
+            how = "alias genérico"
+        if not cand:  # coincidencia aproximada solo dentro del mismo género y país
+            best, score = None, 0.0
+            for i, c in enumerate(clubs):
+                if i in used or c["g"] != g or not compat(c, rc) or rc == WILD:
+                    continue
+                cs = slug(c["n"])
+                if len(sl) < 4 or len(cs) < 4:
+                    continue
+                sc = difflib.SequenceMatcher(None, sl, cs).ratio()
+                # Abreviatura del catálogo ("Estudiantes" = "Estudiantes de La Plata") o sufijo inocuo (Women, Calcio...).
+                if cs.startswith(sl) and cs[len(sl):] in SAFE_SUFFIX and len(sl) >= 5:
+                    sc = max(sc, 0.9)
+                elif sl.startswith(cs) and len(cs) >= 7:
+                    sc = max(sc, 0.9)
+                if sc > score:
+                    best, score = i, sc
+            if best is not None and score >= 0.84:
+                cand, how = [best], f"aprox {score:.2f}"
+        if cand:
+            i = cand[0]
+            used.add(i)
+            clubs[i]["r"] = r["r"]
+            if how == "alias manual" and clubs[i]["c"] == WILD:
+                pass
+            if how == "alias genérico":
+                clubs[i]["n"] = r["n"]  # la base de valoraciones usa el nombre real: manda sobre el genérico
+            if how != "exacto":
+                fuzzy.append((r["n"], clubs[i]["n"], how))
+        else:
+            added.append(r)
+    for r in added:
+        g, rc = ("w" if r["g"] == "w" else "m"), rating_country(r["l"])
+        clubs.append({"n": r["n"], "c": rc, "k": ES_CONT.get(rc, "Mundial"), "l": rating_league(r["l"], rc), "g": g, "r": r["r"], "x": 1})
+    unm = [c for i, c in enumerate(clubs) if "r" not in c]
+    for r in added:
+        rc = rating_country(r["l"])
+        for c in unm:
+            if c["g"] == ("w" if r["g"] == "w" else "m") and (rc == WILD or c["c"] == rc) and difflib.SequenceMatcher(None, slug(r["n"]), slug(c["n"])).ratio() >= 0.75:
+                print("  POSIBLE DUPLICADO:", r["n"], "<->", c["n"], c["c"])
+    return clubs, {"rows": len(rows), "matched": len(used), "fuzzy": fuzzy, "added": [a["n"] + ("(W)" if a["g"] == "w" else "") for a in added]}
+
+
 NOTABLE = ["Brazil", "Colombia", "Uruguay", "Ecuador", "Chile", "Japan", "Saudi Arabia", "Belgium", "Russia", "Switzerland", "Türkiye", "Egypt"]
 for ed in ("25", "26", "27"):
     d = build(ed)
+    d["clubs"], rep = apply_ratings(ed, d["clubs"])
+    if rep:
+        print(ed, "valoraciones:", rep["rows"], "filas;", rep["matched"], "emparejadas;", len(rep["added"]), "añadidas")
+        print("  aproximadas:", rep["fuzzy"])
+        print("  añadidas:", rep["added"])
     have = {(n["n"], n["g"]) for n in d["nationals"]}
     d["missing"] = {g: [{"n": c, "es": C[c][0]} for c in NOTABLE if (c, g) not in have] for g in ("m", "w")}
     f = out / f"fc{ed}.json"

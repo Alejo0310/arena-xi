@@ -27,14 +27,13 @@ test.describe("multiversión", () => {
     await confirm(page);
     await expect(page.locator("[data-edition='FC26']")).toHaveAttribute("aria-checked", "true");
 
-    // Catálogo FC 26: clubes con id de FC 26, sin ningún id de FC 25 y sin valoraciones inventadas.
+    // Catálogo FC 26: todos los ids son de FC 26 (ninguno de FC 25) y los clubes traen valoración de la lista aportada.
     const grid = page.getByTestId("team-grid");
     await expect(grid.locator("[data-team]").first()).toBeVisible();
     const ids = await grid.locator("[data-team]").evaluateAll((els) => els.map((e) => e.getAttribute("data-team")!));
     expect(ids.length).toBeGreaterThan(10);
     expect(ids.every((id) => id.startsWith("fc26:"))).toBe(true);
-    await expect(page.getByText(/sin valoraciones verificadas/i).first()).toBeVisible();
-    await expect(page.getByText("—").first()).toBeVisible();
+    await expect(grid.locator("[data-team]").first()).toContainText("85");
 
     // Cuatro categorías.
     for (const cat of ["club-men", "club-women", "national-men", "national-women"]) await expect(page.locator(`[data-category='${cat}']`)).toBeVisible();
@@ -44,6 +43,9 @@ test.describe("multiversión", () => {
     await expect(page.getByTestId("team-grid").locator("[data-team]").first()).toBeVisible();
     await expect(page.getByTestId("team-grid").getByText("Brasil", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Selecciones no disponibles" })).toContainText("Brasil");
+    // Las selecciones no tienen valoración: se identifican como tal y el aviso lo explica.
+    await expect(page.getByTestId("no-rating").first()).toBeVisible();
+    await expect(page.getByText(/sin valoraciones verificadas/i).first()).toBeVisible();
 
     // Volver a FC 25 restaura sus datos verificados.
     await page.locator("[data-edition='FC25']").click(); // el pool de FC 26 estaba vacío: no hay nada que perder
@@ -85,6 +87,7 @@ test.describe("multiversión", () => {
     await confirm(page);
     const grid = page.getByTestId("team-grid");
     await expect(grid.locator("[data-team]").first()).toBeVisible();
+    await page.locator("[data-category='national-men']").click();
     const input = page.getByPlaceholder(/Nombre del jugador/);
     await input.fill("Ana, Beto");
     await input.press("Enter");
@@ -222,9 +225,8 @@ test.describe("bombos sin valoración", () => {
     await page.locator("[data-edition='FC26']").click();
     await confirm(page);
     await expect(page.getByTestId("team-grid").locator("[data-team]").first()).toBeVisible();
+    await page.locator("[data-category='national-men']").click();
     await expect(page.getByTestId("no-rating").first()).toBeVisible();
-    await page.getByLabel("Liga", { exact: true }).selectOption("Premier League");
-    await page.getByLabel("Valoración", { exact: true }).selectOption("unrated");
     await page.getByRole("button", { name: /Añadir visibles/ }).click();
     const input = page.getByPlaceholder(/Nombre del jugador/);
     await input.fill("Ana, Beto, Caro, Dani");
@@ -249,5 +251,28 @@ test.describe("bombos sin valoración", () => {
     expect(t.draw.potsMethod).toBe("balanced");
     expect(t.potsConfig.method).toBe("balanced");
     expect((t.draw.pots as string[][]).flat().length).toBe(t.teamPool.length);
+  });
+
+  test("FC 27 con valoraciones: los bombos por valoración quedan disponibles y usan las de FC 27", async ({ page }) => {
+    await freshSetup(page);
+    await page.locator("[data-edition='FC27']").click();
+    await confirm(page);
+    await expect(page.getByTestId("team-grid").locator("[data-team]").first()).toBeVisible();
+    await page.getByRole("button", { name: "Top 16" }).click();
+    const input = page.getByPlaceholder(/Nombre del jugador/);
+    await input.fill("Ana, Beto, Caro, Dani");
+    await input.press("Enter");
+    await page.getByRole("button", { name: /Ir al sorteo/ }).click();
+    await page.getByRole("button", { name: /^Bombos/ }).click();
+    await expect(page.getByTestId("pots-unrated-note")).toHaveCount(0);
+    await expect(page.locator("[data-pots-method='rating']")).toBeEnabled();
+    await page.getByTestId("pots-start").click();
+    await expect(page.getByTestId("pots-method")).toContainText("Por valoración verificada");
+    const t = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)!).state.current, STORE);
+    const pots = t.draw.pots as string[][];
+    const ovr = (id: string) => t.snapshot[id].ovr as number;
+    // El bombo 1 contiene los equipos de mayor valoración (todos >= que cualquiera del bombo siguiente).
+    expect(Math.min(...pots[0].map(ovr))).toBeGreaterThanOrEqual(Math.max(...pots[1].map(ovr)));
+    expect(t.teamPool.every((id: string) => id.startsWith("fc27:"))).toBe(true);
   });
 });

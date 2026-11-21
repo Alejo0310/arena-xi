@@ -40,8 +40,23 @@ describe("catálogos por edición", () => {
       }
   });
 
-  it("no hay valoraciones inventadas: FC 26 y FC 27 no tienen ninguna; FC 25 solo las 36 verificadas", () => {
-    for (const e of ["FC26", "FC27"] as const) expect(cats[e].teams.filter((t) => t.ovr != null)).toHaveLength(0);
+  it("valoraciones: las de FC 26/27 vienen de la lista aportada (clubes), nunca de FC 25; las selecciones quedan sin valoración", () => {
+    for (const e of ["FC26", "FC27"] as const) {
+      const rated = cats[e].teams.filter((t) => t.ovr != null);
+      expect(rated.length).toBeGreaterThan(600);
+      for (const t of rated) {
+        expect(t.kind).toBe("club");
+        for (const v of [t.ovr, t.att, t.mid, t.def]) expect(v! >= 40 && v! <= 99).toBe(true); // ni nulos ni ceros disfrazados
+        expect(t.ratingStatus).toBe("verified");
+        expect(t.id.startsWith(e.toLowerCase() + ":") || cats.FC25.teams.every((x) => x.id !== t.id)).toBe(true);
+      }
+      expect(cats[e].teams.filter((t) => t.kind === "national" && t.ovr != null)).toHaveLength(0);
+    }
+    // Real Madrid: 85 en FC 26 y 85 en FC 27 según la lista; el equipo de FC 25 conserva su propio dato.
+    const rm = (e: GameEdition) => cats[e].teams.find((t) => t.name === "Real Madrid" && t.gender === "men")!;
+    expect([rm("FC26").ovr, rm("FC26").att]).toEqual([85, 90]);
+    expect([rm("FC27").ovr, rm("FC27").att]).toEqual([85, 86]);
+    expect(rm("FC26").id).not.toBe(rm("FC27").id);
     const rated25 = cats.FC25.teams.filter((t) => t.ovr != null);
     expect(rated25.length).toBe(36);
     expect(getTeam("real-madrid")?.ovr).toBe(85);
@@ -102,7 +117,7 @@ describe("reglas de negocio multiversión", () => {
     expect(tournamentCategoryError(t)).toBeNull();
   });
   it("los bombos exigen valoraciones verificadas", () => {
-    const pool = teamsFor("FC26", "club", "men").slice(0, 4).map((t) => t.id);
+    const pool = teamsFor("FC26", "club", "men").filter((t) => t.ovr == null).slice(0, 4).map((t) => t.id);
     expect(drawError(base("FC26", "club", "men", pool), "pots", { method: "rating" })).toMatch(/valoración/);
     expect(drawError(base("FC26", "club", "men", pool), "roulette")).toBeNull();
     const ok = base("FC25", "club", "men", ["real-madrid", "bayern", "arsenal", "psg"]);
@@ -130,7 +145,7 @@ describe("instantáneas", () => {
 });
 
 describe("bombos con equipos sin valoración", () => {
-  const unrated = () => teamsFor("FC26", "club", "men").slice(0, 12).map((t) => t.id);
+  const unrated = () => teamsFor("FC26", "club", "men").filter((t) => t.ovr == null).slice(0, 12).map((t) => t.id);
   const mixed = () => ["real-madrid", "bayern", "arsenal", "psg", ...unrated().slice(0, 4)];
 
   it("el método por valoración se rechaza si falta alguna valoración (no se usa 0 ni valores ficticios)", () => {

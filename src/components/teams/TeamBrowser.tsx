@@ -186,6 +186,12 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
         </p>
       )}
 
+      {anyRated && catalog && all.some((t) => t.ovr == null) && (
+        <p className="mb-3 text-xs text-mute" role="note">
+          {all.filter((t) => t.ovr == null).length} de {all.length} equipos no tienen valoración en {info.label} y se identifican como “SIN VALORACIÓN”. Siguen disponibles para el sorteo; para Bombos puedes usar el reparto manual o el aleatorio equilibrado.
+        </p>
+      )}
+
       {selectable && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
           <span className="mr-2 text-soft">

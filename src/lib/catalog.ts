@@ -9,7 +9,7 @@ import { CLUBS, NATIONALS, registerTeams } from "./teams";
  * verificadas son las de los 36 equipos de FC 25 de teams.ts. Nunca se rellenan con datos de otra edición.
  */
 
-interface RawClub { n: string; c: string; k: string; l: string; g: "m" | "w"; lic?: "licensed" | "generic"; new?: 1 }
+interface RawClub { n: string; c: string; k: string; l: string; g: "m" | "w"; lic?: "licensed" | "generic"; new?: 1; /** [OVR, ATQ, MED, DEF] de la lista aportada */ r?: [number, number, number, number]; /** club presente solo en la lista de valoraciones */ x?: 1 }
 interface RawNational { n: string; es: string; k: string; g: "m" | "w"; lic?: "licensed" | "generic"; new?: 1 }
 interface RawCatalog { clubs: RawClub[]; nationals: RawNational[]; missing: { m: { n: string; es: string }[]; w: { n: string; es: string }[] } }
 
@@ -34,6 +34,9 @@ const loaders: Record<GameEdition, () => Promise<RawCatalog>> = {
   FC26: () => import("@/data/catalogs/fc26.json").then((m) => m.default as unknown as RawCatalog),
   FC27: () => import("@/data/catalogs/fc27.json").then((m) => m.default as unknown as RawCatalog),
 };
+
+/** Origen de las valoraciones de clubes de FC 26 y FC 27: lista copiada por el usuario de una base de datos pública. */
+const RATINGS_SOURCE = "Lista de valoraciones aportada (copiada de una base de datos pública, nov. 2026)";
 
 const cache = new Map<GameEdition, Catalog>();
 const pending = new Map<GameEdition, Promise<Catalog>>();
@@ -186,11 +189,12 @@ function buildCatalog(edition: GameEdition, raw: RawCatalog): Catalog {
       short: shortOf(c.n),
       league: c.l,
       country: c.c,
-      ovr: null, att: null, mid: null, def: null,
+      ovr: c.r?.[0] ?? null, att: c.r?.[1] ?? null, mid: c.r?.[2] ?? null, def: c.r?.[3] ?? null,
+      ...(c.r ? { ratingStatus: "verified" as const } : {}),
       colors,
       license: c.lic ?? "unknown",
       ...(c.new ? { newIn: edition } : {}),
-      source: "FIFPlay / FIFAUTeam",
+      source: c.r ? RATINGS_SOURCE : "FIFPlay / FIFAUTeam",
     });
   }
   // Los equipos valorados de FC 25 que FIFPlay no lista (p. ej. por otro nombre) se conservan: sus datos están verificados.

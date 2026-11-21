@@ -41,9 +41,12 @@ export function useDemoTeams(): DemoData {
     if (edition === "FC25" || !catalog) {
       return { pool: FC25_SAMPLE.slice(0, 8), potsPool, label: "Datos de ejemplo · clubes de FC 25 con valoraciones verificadas", potsLabel, edition: "FC25" as const, unrated: false };
     }
-    const clubs = teamsFor(edition, "club", "men");
-    const top = clubs.filter((t) => t.league === "Premier League" || t.league.startsWith("LALIGA") || t.league === "Bundesliga").slice(0, 8);
-    const pool = top.length >= 5 ? top : clubs.slice(0, 8);
-    return { pool, potsPool, label: `Equipos de ${editionInfo(edition).label} · sin valoraciones verificadas (se muestran como “—”)`, potsLabel, edition, unrated: true };
+    const topRated = teamsFor(edition, "club", "men").filter(isRated).sort((a, b) => b.ovr - a.ovr);
+    if (topRated.length < 12) {
+      const clubs = teamsFor(edition, "club", "men");
+      return { pool: clubs.slice(0, 8), potsPool, label: `Equipos de ${editionInfo(edition).label} · sin valoraciones verificadas (“SIN VALORACIÓN”)`, potsLabel, edition, unrated: true };
+    }
+    const label = `Mejores clubes de ${editionInfo(edition).label} según la lista de valoraciones aportada`;
+    return { pool: topRated.slice(0, 8), potsPool: topRated.slice(0, 12), label, potsLabel: label, edition, unrated: false };
   }, [edition, catalog]);
 }

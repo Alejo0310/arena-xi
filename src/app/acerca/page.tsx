@@ -15,7 +15,7 @@ const STACK = [
 const FAQ: [string, string][] = [
   ["¿Es un producto oficial de EA SPORTS?", "No. ARENA XI es un proyecto independiente, sin afiliación, patrocinio ni respaldo oficial de EA SPORTS o Electronic Arts."],
   ["¿Juego los partidos dentro de ARENA XI?", "No. Los partidos se juegan en el videojuego; ARENA XI sortea los equipos, organiza el calendario o las llaves y registra los marcadores que introduces."],
-  ["¿Por qué FC 26 y FC 27 no muestran valoraciones?", "Porque no he encontrado una fuente accesible y verificable con las valoraciones de equipo de esas ediciones, y prefiero no inventarlas. Se muestran como “—”. FC 25 sí conserva las valoraciones verificadas de sus 36 equipos principales."],
+  ["¿Por qué algunos equipos aparecen como “SIN VALORACIÓN”?", "Porque no existe una valoración verificable para ellos en esa edición (por ejemplo, las selecciones de FC 26 y FC 27), y prefiero no inventarla. Siguen disponibles en todos los sorteos; en Bombos puedes repartirlos a mano o al azar de forma equilibrada."],
   ["¿Por qué no aparece mi selección favorita?", "El catálogo refleja las listas de equipos de cada edición. En el catálogo, las selecciones relevantes ausentes de una edición aparecen en la sección “Selecciones no disponibles” y no se pueden sortear."],
   ["¿Puedo mezclar clubes y selecciones, o masculinos y femeninos?", "No. Un torneo usa una sola edición y una sola categoría (clubes o selecciones, masculinos o femeninos)."],
   ["¿Qué pasa con mis torneos antiguos si el catálogo cambia?", "Cada torneo guarda una instantánea de sus equipos y valoraciones, así que conserva los datos con los que se creó."],
@@ -76,7 +76,7 @@ export default function AboutPage() {
 
       <Section id="ediciones" title="Ediciones de FC admitidas">
         <p>ARENA XI admite <b className="text-white">EA SPORTS FC 25, FC 26 y FC 27</b>. Cada edición tiene su propio catálogo de clubes y selecciones (masculinos y femeninos), aislado de las demás: nunca se mezclan equipos de ediciones distintas.</p>
-        <p>Las listas de equipos proceden de FIFPlay y FIFAUTeam; el estado de licencia (licenciado, genérico o sin verificar) y las etiquetas de novedad solo se muestran cuando una fuente lo respalda. Las valoraciones verificadas existen para los 36 equipos principales de FC 25; en el resto se muestran como “—”.</p>
+        <p>Las listas de equipos proceden de FIFPlay y FIFAUTeam; el estado de licencia (licenciado, genérico o sin verificar) y las etiquetas de novedad solo se muestran cuando una fuente lo respalda. Las valoraciones de clubes de FC 26 y FC 27 proceden de una lista aportada por el autor (copiada de una base de datos pública); FC 25 conserva las de sus 36 equipos principales. Lo que no tiene valoración se identifica como “SIN VALORACIÓN”.</p>
         <p>Un equipo disponible con diseño genérico (sin licencia de escudo o equipación) sigue estando en el juego; no es lo mismo que una selección ausente.</p>
       </Section>
 
@@ -129,6 +129,7 @@ export default function AboutPage() {
           <li><b className="text-white">FIFPlay:</b> listas de clubes y selecciones de FC 25, FC 26 y FC 27 (disponibilidad, país y liga).</li>
           <li><b className="text-white">FIFAUTeam:</b> estado de licencia y novedades entre ediciones.</li>
           <li><b className="text-white">FIFA Index, ReFIFA, SoFIFA y FIFACM:</b> valoraciones de los 36 equipos de FC 25 (fuente indicada en cada equipo).</li>
+          <li><b className="text-white">Lista de valoraciones aportada:</b> OVR, ATQ, MED y DEF de clubes de FC 26 y FC 27, copiada por el autor de una base de datos pública (noviembre de 2026).</li>
           <li><b className="text-white">Librerías:</b> Next.js, React, Tailwind CSS, Zustand, Motion, Three.js, lucide-react, canvas-confetti, html-to-image y lz-string.</li>
         </ul>
         <p>Las listas de las fuentes pueden estar incompletas o desactualizarse con los parches del juego.</p>

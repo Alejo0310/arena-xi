@@ -9,7 +9,7 @@ import { CATEGORIES, EDITIONS, LICENSE_LABEL, editionInfo } from "@/lib/editions
 import type { GameEdition, Gender, LicenseStatus, Team, TeamKind } from "@/lib/types";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { RatingBar } from "@/components/ui/bits";
-import { fmtRating } from "@/lib/teams";
+import { fmtRating, ratingStatusOf } from "@/lib/teams";
 import { useAllCatalogs, useCatalog } from "./useCatalog";
 
 type SortKey = "ovr" | "att" | "mid" | "def" | "name";
@@ -25,7 +25,7 @@ interface Props {
   onChange?: (ids: string[]) => void;
 }
 
-const PAGE = 48;
+const PAGE = 24;
 
 /**
  * Catálogo de equipos de UNA edición y UNA categoría (clubes/selecciones × masculino/femenino),
@@ -41,6 +41,7 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
   const [license, setLicense] = useState<"" | LicenseStatus>("");
   const [minOvr, setMinOvr] = useState(0);
   const [onlyNew, setOnlyNew] = useState(false);
+  const [rating, setRating] = useState<"all" | "rated" | "unrated">("all");
   const [sort, setSort] = useState<SortKey>("ovr");
   const [shown, setShown] = useState(PAGE);
   const dq = useDeferredValue(q);
@@ -59,10 +60,11 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
     setLicense("");
     setMinOvr(0);
     setOnlyNew(false);
+    setRating("all");
     setShown(PAGE);
     setSort(anyRated ? "ovr" : "name");
   }, [edition, kind, gender, anyRated]);
-  useEffect(() => setShown(PAGE), [dq, league, country, continent, license, minOvr, onlyNew, sort]);
+  useEffect(() => setShown(PAGE), [dq, league, country, continent, license, minOvr, onlyNew, rating, sort]);
 
   const leagues = useMemo(() => [...new Set(all.filter((t) => (!country || t.country === country) && (!continent || t.continent === continent)).map((t) => t.league))].sort((a, b) => a.localeCompare(b)), [all, country, continent]);
   const countries = useMemo(() => [...new Set(all.filter((t) => !continent || t.continent === continent).map((t) => t.country))].sort((a, b) => a.localeCompare(b)), [all, continent]);
@@ -79,10 +81,11 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
           (!continent || t.continent === continent) &&
           (!license || (t.license ?? "unknown") === license) &&
           (!onlyNew || t.newIn) &&
+          (rating === "all" || (rating === "rated") === (ratingStatusOf(t) !== "unavailable")) &&
           (minOvr === 0 || (t.ovr != null && t.ovr >= minOvr)),
       )
       .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : (b[sort] ?? -1) - (a[sort] ?? -1) || a.name.localeCompare(b.name)));
-  }, [all, dq, league, country, continent, license, onlyNew, minOvr, sort]);
+  }, [all, dq, league, country, continent, license, onlyNew, rating, minOvr, sort]);
 
   const toggle = (id: string) => onChange?.(sel.has(id) ? [...sel].filter((x) => x !== id) : [...sel, id]);
   const visibleIds = list.map((t) => t.id);
@@ -121,7 +124,7 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
               onClick={() => !active && onCategoryChange(c.kind, c.gender)}
               className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 font-display text-sm font-bold uppercase tracking-wider transition-colors sm:text-base ${active ? "text-ink" : "text-soft hover:text-white"}`}
             >
-              {active && <motion.span layoutId="category-pill" className="absolute inset-0 rounded-xl bg-neon" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
+              {active && <motion.span layoutId="category-pill" className="pointer-events-none absolute inset-0 rounded-xl bg-neon" transition={{ type: "spring", stiffness: 400, damping: 32 }} />}
               <span className="relative">{c.label}</span>
               {catalog && <span className={`relative num rounded-full px-1.5 text-xs ${active ? "bg-ink/15" : "bg-white/10"}`}>{teamsFor(edition, c.kind, c.gender).length}</span>}
             </button>
@@ -163,6 +166,14 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
             <option value="name">Nombre</option>
           </select>
         </label>
+        <label>
+          <span className="sr-only">Valoración</span>
+          <select className="field !py-2" value={rating} onChange={(e) => setRating(e.target.value as "all" | "rated" | "unrated")} aria-label="Valoración">
+            <option value="all">Valoración: mostrar todos</option>
+            <option value="rated">Solo con valoración</option>
+            <option value="unrated">Solo sin valoración</option>
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm text-soft">
           <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} className="accent-[#3dff8b]" />
           Solo novedades verificadas
@@ -171,7 +182,7 @@ export function TeamBrowser({ edition, onEditionChange, kind, gender, onCategory
 
       {!anyRated && catalog && (
         <p className="glass mb-4 border-volt/30 p-3 text-sm text-soft" role="note">
-          <b className="text-white">{info.label}: sin valoraciones verificadas.</b> No hay una fuente accesible con las valoraciones de equipo de esta edición, así que se muestran como “—” en lugar de inventarlas. Los bombos y el filtro de valoración no están disponibles aquí.
+          <b className="text-white">{info.label}: sin valoraciones verificadas.</b> Se buscaron en las fuentes accesibles y no hay datos verificables, así que los equipos se identifican como “SIN VALORACIÓN” en lugar de inventar números. Siguen disponibles para todos los sorteos; en Bombos puedes usar el reparto manual o el aleatorio equilibrado.
         </p>
       )}
 
@@ -251,8 +262,14 @@ function TeamCard({ team, selected, onToggle }: { team: Team; selected: boolean;
             </div>
           </div>
           <div className="text-right">
-            <div className="display text-3xl font-black leading-none text-neon">{fmtRating(team.ovr)}</div>
-            <div className="text-[0.6rem] font-bold uppercase tracking-widest text-mute">Media</div>
+            {ratingStatusOf(team) === "unavailable" ? (
+              <div className="rounded bg-white/5 px-1.5 py-1 text-[0.6rem] font-bold uppercase tracking-wider text-mute" data-testid="no-rating">Sin valoración</div>
+            ) : (
+              <>
+                <div className="display text-3xl font-black leading-none text-neon">{ratingStatusOf(team) === "estimated" ? "~" : ""}{fmtRating(team.ovr)}</div>
+                <div className="text-[0.6rem] font-bold uppercase tracking-widest text-mute">{ratingStatusOf(team) === "estimated" ? "Media estimada" : "Media"}</div>
+              </>
+            )}
           </div>
         </div>
         <div className="mt-2 space-y-1">

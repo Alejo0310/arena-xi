@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
-import type { DrawMode, GameEdition, Gender, Participant, PendingPick, Team, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
+import type { DrawMode, PotsConfig, GameEdition, Gender, Participant, PendingPick, Team, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
 import { uid } from "@/lib/random";
 import { defaultPool, getTeam, setActiveSnapshot, snapshotOf } from "@/lib/teams";
 import { PLAYER_COLORS, generateTournamentName } from "@/lib/names";
@@ -72,7 +72,7 @@ interface State {
   removeParticipant: (id: string) => void;
   setPool: (ids: string[]) => Err;
 
-  startDraw: (mode: DrawMode) => Err;
+  startDraw: (mode: DrawMode, pots?: PotsConfig) => Err;
   selectPot: (index: number) => void;
   /** Decide (y guarda como pendiente) el equipo del turno actual. No avanza el turno. */
   drawDecide: (choice?: draw.Choice) => { pending?: PendingPick; error?: string };
@@ -266,12 +266,13 @@ export const useTournament = create<State>()(
           return null;
         },
 
-        startDraw: (mode) => {
+        startDraw: (mode, pots) => {
           const t = editable();
           if (!t) return "El torneo ya ha comenzado.";
-          const err = draw.drawError(t, mode);
+          const cfg = mode === "pots" ? (pots ?? t.potsConfig) : undefined;
+          const err = draw.drawError(t, mode, cfg);
           if (err) return err;
-          mutate((x) => ({ ...x, phase: "draw", draw: draw.initDraw(x, mode), assignments: {}, drawHistory: [] }));
+          mutate((x) => ({ ...x, ...(cfg ? { potsConfig: cfg } : {}), phase: "draw", draw: draw.initDraw(x, mode, cfg), assignments: {}, drawHistory: [] }));
           return null;
         },
 

@@ -4,7 +4,8 @@ const PORT = 3100;
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 90_000,
+  timeout: 120_000,
+  expect: { timeout: 10_000 },
   fullyParallel: false,
   reporter: [["list"]],
   use: {

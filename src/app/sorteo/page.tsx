@@ -17,6 +17,7 @@ import { confirmDialog, toast } from "@/components/ui/feedback";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { Portal } from "@/components/ui/Portal";
 import { Presentation, RevealOverlay, type RevealItem } from "@/components/draw/RevealOverlay";
+import { PotsSetup } from "@/components/draw/PotsSetup";
 import { useDrawController } from "@/components/draw/useDrawController";
 import type { StageProps } from "@/components/draw/types";
 import { championCelebration } from "@/lib/fx";
@@ -55,11 +56,14 @@ export default function DrawPage() {
 
 function ModePicker({ t }: { t: Tournament }) {
   const startDraw = useTournament((s) => s.startDraw);
+  const [potsSetup, setPotsSetup] = useState(false);
   const pick = (m: DrawMode) => {
+    if (m === "pots") return setPotsSetup(true); // los bombos piden antes elegir el método
     const err = startDraw(m);
     if (err) toast.error(err);
   };
   const CatIcon = t.settings.category === "club" ? Shield : Globe2;
+  if (potsSetup) return <PotsSetup t={t} onBack={() => setPotsSetup(false)} />;
   return (
     <div>
       <SectionHeader kicker={`${t.name} · ${t.participants.length} jugadores · ${t.teamPool.length} ${CATEGORY_LABEL[t.settings.category].toLowerCase()}`} title="Elige cómo sortear">
@@ -190,7 +194,7 @@ function DrawStage({ t }: { t: Tournament }) {
                 {d.mode === "machine" && <Machine {...stageProps} />}
                 {d.mode === "envelopes" && d.envelopes && <Envelopes {...stageProps} envelopes={d.envelopes} owners={envelopeOwners} participants={t.participants} />}
                 {d.mode === "draft" && <Draft {...stageProps} options={d.draftOptions ?? []} />}
-                {d.mode === "pots" && d.pots && <Pots {...stageProps} pots={d.pots} potIndex={d.potIndex ?? 0} canChangePot={d.cursor === 0 && !d.pending && !ctl.locked} onSelectPot={selectPot} />}
+                {d.mode === "pots" && d.pots && <Pots {...stageProps} pots={d.pots} method={d.potsMethod} potIndex={d.potIndex ?? 0} canChangePot={d.cursor === 0 && !d.pending && !ctl.locked} onSelectPot={selectPot} />}
               </div>
               <div className="mt-8 flex justify-center border-t border-line pt-5">
                 <Button variant="secondary" onClick={fullDraw} disabled={ctl.locked || !!d.pending}>

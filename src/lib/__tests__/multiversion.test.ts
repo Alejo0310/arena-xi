@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadCatalog, teamsFor, type Catalog } from "../catalog";
 import { categoryError, sanitizePool, tournamentCategoryError } from "../category";
-import { buildPots, drawError } from "../draw";
-import { getTeam, isRated, snapshotOf, setActiveSnapshot, CLUBS } from "../teams";
+import { buildBalancedPots, buildPots, drawError, initDraw, manualPotsError, potsConfigError, ratingSplit } from "../draw";
+import { getTeam, isRated, ratingStatusOf, snapshotOf, setActiveSnapshot, CLUBS } from "../teams";
 import type { GameEdition, Tournament } from "../types";
 
 const cats: Record<string, Catalog> = {};
@@ -103,10 +103,10 @@ describe("reglas de negocio multiversión", () => {
   });
   it("los bombos exigen valoraciones verificadas", () => {
     const pool = teamsFor("FC26", "club", "men").slice(0, 4).map((t) => t.id);
-    expect(drawError(base("FC26", "club", "men", pool), "pots")).toMatch(/valoración verificada/);
+    expect(drawError(base("FC26", "club", "men", pool), "pots", { method: "rating" })).toMatch(/valoración/);
     expect(drawError(base("FC26", "club", "men", pool), "roulette")).toBeNull();
     const ok = base("FC25", "club", "men", ["real-madrid", "bayern", "arsenal", "psg"]);
-    expect(drawError(ok, "pots")).toBeNull();
+    expect(drawError(ok, "pots", { method: "rating" })).toBeNull();
     expect(buildPots(ok.teamPool, 2)[0].every((id) => isRated(getTeam(id)))).toBe(true);
   });
 });
@@ -126,5 +126,57 @@ describe("instantáneas", () => {
       live.ovr = original;
       setActiveSnapshot(undefined);
     }
+  });
+});
+
+describe("bombos con equipos sin valoración", () => {
+  const unrated = () => teamsFor("FC26", "club", "men").slice(0, 12).map((t) => t.id);
+  const mixed = () => ["real-madrid", "bayern", "arsenal", "psg", ...unrated().slice(0, 4)];
+
+  it("el método por valoración se rechaza si falta alguna valoración (no se usa 0 ni valores ficticios)", () => {
+    expect(potsConfigError(unrated(), { method: "rating" }, 4, false, "FC26")).toMatch(/sin valoración|no tienen valoración/);
+    expect(potsConfigError(mixed(), { method: "rating" }, 2, false)).toMatch(/4 equipos/);
+    expect(potsConfigError(["real-madrid", "bayern", "arsenal", "psg"], { method: "rating" }, 2, false)).toBeNull();
+    expect(ratingSplit(mixed())).toEqual({ rated: ["real-madrid", "bayern", "arsenal", "psg"], unrated: unrated().slice(0, 4) });
+  });
+
+  it("aleatorio equilibrado: todos asignados, sin duplicados, tamaños casi iguales y cada bombo con al menos n", () => {
+    for (const [total, n] of [[12, 4], [13, 4], [11, 3], [8, 8], [30, 8]] as const) {
+      const pool = teamsFor("FC27", "club", "men").slice(0, total).map((t) => t.id);
+      const pots = buildBalancedPots(pool, n);
+      expect(pots.flat().sort()).toEqual([...pool].sort());
+      const sizes = pots.map((p) => p.length);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+      expect(Math.min(...sizes)).toBeGreaterThanOrEqual(n);
+    }
+  });
+
+  it("manual: exige todos los equipos, sin repetidos y bombos suficientes", () => {
+    const pool = unrated().slice(0, 8);
+    const ok = [pool.slice(0, 4), pool.slice(4)];
+    expect(manualPotsError(pool, ok, 4, false)).toBeNull();
+    expect(manualPotsError(pool, [pool.slice(0, 4), pool.slice(4, 7)], 4, false)).toMatch(/Faltan 1/);
+    expect(manualPotsError(pool, [pool.slice(0, 5), pool.slice(4)], 4, false)).toMatch(/repetidos/);
+    expect(manualPotsError(pool, [pool.slice(0, 6), pool.slice(6)], 4, false)).toMatch(/bombo 2/);
+    expect(manualPotsError(pool, [pool.slice(0, 6), pool.slice(6)], 4, true)).toBeNull();
+  });
+
+  it("el sorteo por bombos funciona con equipos sin valoración usando manual o equilibrado, y conserva el método", () => {
+    const pool = unrated().slice(0, 8);
+    const t = base("FC26", "club", "men", pool);
+    expect(drawError(t, "pots", { method: "rating" })).toBeTruthy();
+    expect(drawError(t, "pots", { method: "balanced" })).toBeNull();
+    const st = initDraw(t, "pots", { method: "balanced" });
+    expect(st.potsMethod).toBe("balanced");
+    expect(st.pots!.flat().sort()).toEqual([...pool].sort());
+    const manual = initDraw(t, "pots", { method: "manual", manualPots: [pool.slice(0, 4), pool.slice(4)] });
+    expect(manual.potsMethod).toBe("manual");
+    expect(manual.pool).toEqual(pool.slice(0, 4));
+  });
+
+  it("estado de valoración: null es 'no disponible', nunca verificado", () => {
+    expect(ratingStatusOf(getTeam("real-madrid"))).toBe("verified");
+    expect(ratingStatusOf(getTeam(unrated()[0]))).toBe("unavailable");
+    expect(ratingStatusOf(undefined)).toBe("unavailable");
   });
 });

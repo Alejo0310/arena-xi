@@ -15,6 +15,18 @@ export type Gender = "men" | "women";
  * licensed = nombre, escudo y equipación oficiales; generic = disponible con nombre/escudo/equipación genéricos;
  * unknown = disponible pero la licencia no se ha podido verificar.
  */
+/**
+ * Estado de una valoración: verified = respaldada por una fuente; estimated = calculada con una metodología
+ * documentada y autorizada por el usuario (nunca se presenta como oficial); unavailable = sin información suficiente.
+ */
+export type RatingStatus = "verified" | "estimated" | "unavailable";
+/** Cómo se forman los bombos del sorteo por bombos. */
+export type PotsMethod = "rating" | "manual" | "balanced";
+export interface PotsConfig {
+  method: PotsMethod;
+  /** Solo en el método manual: equipos (ids) de cada bombo. */
+  manualPots?: string[][];
+}
 export type LicenseStatus = "licensed" | "generic" | "unknown";
 
 /** Bandera simplificada (franjas + adorno opcional) para selecciones. */
@@ -41,6 +53,8 @@ export interface Team {
   gender?: Gender;
   continent?: string;
   license?: LicenseStatus;
+  /** Estado de las valoraciones. Ausente = verificada si existen, no disponible si son null. */
+  ratingStatus?: RatingStatus;
   /** Etiqueta de novedad solo cuando una fuente verifica que es nuevo en esta edición. */
   newIn?: GameEdition;
   /** Nombre tal como aparece en FC 25 (p. ej. "Lombardia FC"). */
@@ -143,6 +157,8 @@ export interface DrawState {
   /** Bombos: equipos agrupados por nivel. */
   pots?: string[][];
   potIndex?: number;
+  /** Método con el que se construyeron los bombos (se conserva con el torneo). */
+  potsMethod?: PotsMethod;
   /** Sorteo decidido pendiente de confirmar: el cursor no avanza hasta "Continuar". */
   pending?: PendingPick | null;
 }
@@ -162,6 +178,8 @@ export interface Tournament {
    * Garantiza que actualizar un catálogo no altera torneos históricos.
    */
   snapshot?: Record<string, Team>;
+  /** Configuración de bombos elegida por el organizador (para reiniciar el sorteo con el mismo método). */
+  potsConfig?: PotsConfig;
   assignments: Record<string, string>;
   drawHistory: DrawRecord[];
   draw: DrawState | null;

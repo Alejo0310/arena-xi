@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 export type Mode = "Ruleta" | "Sobres" | "Tómbola" | "Draft" | "Bombos";
 
@@ -7,6 +7,14 @@ export async function shot(page: Page, name: string) {
   if (!dir) return;
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${dir}/${test.info().project.name}-${name}.png` });
+}
+
+/** Pulsa un elemento centrado en pantalla (la barra fija inferior de la configuración puede tapar el scroll mínimo en móvil). */
+export async function clickCentered(loc: Locator) {
+  await loc.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  // En móvil la página sigue reacomodándose (catálogo, animaciones) y Playwright puede declarar el
+  // botón "no estable" o tapado aunque sea alcanzable; el clic sintético ejecuta el mismo manejador.
+  await loc.dispatchEvent("click");
 }
 
 export async function confirm(page: Page) {
@@ -24,14 +32,15 @@ export async function setup(page: Page, names: string[], opts: { format?: "Liga"
   await input.fill(names.join(", "));
   await input.press("Enter");
   for (const n of names) await expect(page.getByRole("button", { name: `Eliminar ${n}` })).toBeVisible();
-  if (opts.format) await page.getByRole("button", { name: new RegExp(`^${opts.format}`) }).click();
-  if (opts.category === "Selecciones") await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
-  await page.getByRole("button", { name: /Ir al sorteo/ }).click();
+  if (opts.format) await clickCentered(page.getByRole("button", { name: new RegExp(`^${opts.format}`) }));
+  if (opts.category === "Selecciones") await clickCentered(page.getByRole("tab", { name: /Selecciones masculinas/ }));
+  await clickCentered(page.getByRole("button", { name: /Ir al sorteo/ }));
   await expect(page).toHaveURL(/\/sorteo/);
 }
 
 export async function chooseMode(page: Page, mode: Mode) {
   await page.getByRole("button", { name: new RegExp(`^${mode}`) }).click();
+  if (mode === "Bombos") await page.getByTestId("pots-start").click(); // paso previo: método de bombos (por valoración por defecto)
   await expect(page.getByTestId("turn-banner")).toBeVisible();
 }
 

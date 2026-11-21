@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assignedTeams, chooseMode, confirm, fullDraw, playTurn, setup, shot, startTurn, type Mode } from "./helpers";
+import { assignedTeams, chooseMode, confirm, fullDraw, playTurn, setup, shot, startTurn, type Mode, clickCentered } from "./helpers";
 
 const MODES: Mode[] = ["Ruleta", "Sobres", "Tómbola", "Draft", "Bombos"];
 const PLAYERS = ["DA", "TA", "MA", "PA"];
@@ -120,7 +120,7 @@ test.describe("categorías", () => {
     await chooseMode(page, "Ruleta");
     await playTurn(page, "Ruleta", 1, 4);
     await page.goto("/nuevo");
-    await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
+    await clickCentered(page.getByRole("tab", { name: /Selecciones masculinas/ }));
     await expect(page.getByRole("alertdialog")).toContainText(/no se pueden mezclar/i);
     await confirm(page);
     await expect(page.getByRole("tab", { name: /Selecciones masculinas/ })).toHaveAttribute("aria-selected", "true");
@@ -134,7 +134,7 @@ test.describe("categorías", () => {
     await page.goto("/equipos");
     await expect(page.locator("[data-team='real-madrid']")).toBeVisible();
     await expect(page.locator("[data-team='nat-france']")).toHaveCount(0);
-    await page.getByRole("tab", { name: /Selecciones masculinas/ }).click();
+    await clickCentered(page.getByRole("tab", { name: /Selecciones masculinas/ }));
     await expect(page.locator("[data-team='nat-france']")).toBeVisible();
     await expect(page.locator("[data-team='real-madrid']")).toHaveCount(0);
     await expect(page.locator("[data-team^='nat-']")).toHaveCount(10);

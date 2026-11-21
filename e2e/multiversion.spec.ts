@@ -215,3 +215,39 @@ test.describe("footer", () => {
     await expect(page.locator("#sorteos")).toBeVisible();
   });
 });
+
+test.describe("bombos sin valoración", () => {
+  test("FC 26 avisa de los equipos sin valoración y permite bombos equilibrados y manuales", async ({ page }) => {
+    await freshSetup(page);
+    await page.locator("[data-edition='FC26']").click();
+    await confirm(page);
+    await expect(page.getByTestId("team-grid").locator("[data-team]").first()).toBeVisible();
+    await expect(page.getByTestId("no-rating").first()).toBeVisible();
+    await page.getByLabel("Liga", { exact: true }).selectOption("Premier League");
+    await page.getByLabel("Valoración", { exact: true }).selectOption("unrated");
+    await page.getByRole("button", { name: /Añadir visibles/ }).click();
+    const input = page.getByPlaceholder(/Nombre del jugador/);
+    await input.fill("Ana, Beto, Caro, Dani");
+    await input.press("Enter");
+    await page.getByRole("button", { name: /Ir al sorteo/ }).click();
+    await page.getByRole("button", { name: /^Bombos/ }).click();
+
+    await expect(page.getByTestId("pots-unrated-note")).toContainText(/equipos sin valoración verificada/);
+    await expect(page.locator("[data-pots-method='rating']")).toBeDisabled();
+    await expect(page.getByTestId("pots-start")).toBeEnabled(); // el sorteo no queda bloqueado
+
+    // Manual: sin asignar no se puede iniciar.
+    await page.locator("[data-pots-method='manual']").click();
+    await expect(page.getByTestId("pots-start")).toBeDisabled();
+    await page.getByRole("button", { name: /Prellenar al azar/ }).click();
+    await expect(page.getByTestId("pots-start")).toBeEnabled();
+    await page.locator("[data-pots-method='balanced']").click();
+    await page.getByTestId("pots-start").click();
+    await expect(page.getByTestId("pots-method")).toContainText("Aleatorios equilibrados");
+    await expect(page.getByTestId("turn-banner")).toBeVisible();
+    const t = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)!).state.current, STORE);
+    expect(t.draw.potsMethod).toBe("balanced");
+    expect(t.potsConfig.method).toBe("balanced");
+    expect((t.draw.pots as string[][]).flat().length).toBe(t.teamPool.length);
+  });
+});

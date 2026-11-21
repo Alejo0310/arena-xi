@@ -1,4 +1,4 @@
-import type { GameEdition, Gender, Team, TeamKind } from "./types";
+import type { GameEdition, Gender, RatingStatus, Team, TeamKind } from "./types";
 
 /**
  * Base de datos de equipos de EA SPORTS FC 25.
@@ -118,6 +118,13 @@ export function sortByRating(ids: readonly string[]): string[] {
     return rank(tb) - rank(ta) || ta.name.localeCompare(tb.name);
   });
 }
+
+/** Estado efectivo de la valoración de un equipo. Un null nunca cuenta como valoración. */
+export function ratingStatusOf(t: Team | undefined): RatingStatus {
+  if (!t || t.ovr == null) return "unavailable";
+  return t.ratingStatus === "estimated" ? "estimated" : "verified";
+}
+export const RATING_STATUS_LABEL: Record<RatingStatus, string> = { verified: "Verificada", estimated: "Estimada", unavailable: "SIN VALORACIÓN" };
 
 /** Texto de una valoración: el número o "—" si no existe una valoración verificada. */
 export const fmtRating = (n: number | null | undefined): string => (n == null ? "—" : String(n));

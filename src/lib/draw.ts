@@ -1,4 +1,4 @@
-import type { DrawMode, DrawRecord, DrawState, PendingPick, Tournament } from "./types";
+import type { DrawMode, DrawRecord, DrawState, PendingPick, PotsConfig, PotsMethod, Tournament } from "./types";
 import { pick, sample, shuffle, uid } from "./random";
 import { getTeam, isRated, sortByRating } from "./teams";
 import { categoryError, sanitizePool, scopeOf, CATEGORY_LABEL, type ScopeLike } from "./category";
@@ -34,7 +34,64 @@ export function buildPots(pool: readonly string[], size: number): string[][] {
   return pots;
 }
 
-export function drawError(t: Tournament, mode: DrawMode): string | null {
+/** Equipos de un conjunto con y sin valoración completa. Un null nunca se trata como 0. */
+export function ratingSplit(ids: readonly string[]): { rated: string[]; unrated: string[] } {
+  const rated: string[] = [];
+  const unrated: string[] = [];
+  for (const id of ids) (isRated(getTeam(id)) ? rated : unrated).push(id);
+  return { rated, unrated };
+}
+
+/** Bombos aleatorios equilibrados: reparte todos los equipos al azar en k bombos de tamaño casi igual (cada uno con al menos `size`). */
+export function buildBalancedPots(pool: readonly string[], size: number): string[][] {
+  const k = Math.max(1, Math.floor(pool.length / Math.max(1, size)));
+  const pots: string[][] = Array.from({ length: k }, () => []);
+  shuffle(pool).forEach((id, i) => pots[i % k].push(id));
+  return pots;
+}
+
+/** Número de bombos por defecto: los que permiten que cada uno tenga al menos `size` equipos. */
+export const defaultPotCount = (teams: number, size: number) => Math.max(1, Math.floor(teams / Math.max(1, size)));
+
+/** Valida un reparto manual: todos los equipos del sorteo, una sola vez, sin bombos vacíos o demasiado pequeños. */
+export function manualPotsError(pool: readonly string[], pots: readonly (readonly string[])[], participants: number, allowRepeats: boolean): string | null {
+  const flat = pots.flat();
+  if (new Set(flat).size !== flat.length) return "Hay equipos repetidos entre los bombos.";
+  const inPool = new Set(pool);
+  if (flat.some((id) => !inPool.has(id))) return "Hay equipos que no forman parte del sorteo.";
+  const missing = pool.filter((id) => !flat.includes(id));
+  if (missing.length) return `Faltan ${missing.length} equipos por asignar a un bombo.`;
+  const need = allowRepeats ? 1 : participants;
+  const bad = pots.findIndex((p) => p.length < need);
+  if (bad >= 0) return `El bombo ${bad + 1} tiene ${pots[bad].length} equipos y se necesitan al menos ${need}.`;
+  return null;
+}
+
+/** Comprueba que el método elegido puede aplicarse a los equipos del sorteo. */
+export function potsConfigError(pool: readonly string[], cfg: PotsConfig, participants: number, allowRepeats: boolean, edition = "FC25"): string | null {
+  if (cfg.method === "rating") {
+    const { unrated } = ratingSplit(pool);
+    if (unrated.length) return `${unrated.length} equipos no tienen valoración verificada en ${edition.replace("FC", "FC ")}: no se pueden clasificar por valoración. Usa bombos manuales o aleatorios equilibrados.`;
+    return null;
+  }
+  if (cfg.method === "manual") return manualPotsError(pool, cfg.manualPots ?? [], participants, allowRepeats);
+  if (cfg.method === "balanced") return null;
+  return "Método de bombos desconocido.";
+}
+
+export function buildPotsBy(cfg: PotsConfig, pool: readonly string[], participants: number): string[][] {
+  if (cfg.method === "rating") return buildPots(pool, participants);
+  if (cfg.method === "manual") return (cfg.manualPots ?? []).map((p) => [...p]);
+  return buildBalancedPots(pool, participants);
+}
+
+export const POTS_METHOD_LABEL: Record<PotsMethod, string> = {
+  rating: "Por valoración verificada",
+  manual: "Clasificación manual",
+  balanced: "Aleatorios equilibrados",
+};
+
+export function drawError(t: Tournament, mode: DrawMode, pots?: PotsConfig): string | null {
   const n = t.participants.length;
   const kind = t.settings.category;
   const scope = scopeOf(t.settings);
@@ -46,19 +103,22 @@ export function drawError(t: Tournament, mode: DrawMode): string | null {
     return `Hay ${n} participantes y solo ${t.teamPool.length} equipos. Añade equipos o permite repetidos.`;
   if (!DRAW_MODES.some((m) => m.id === mode)) return "Modalidad de sorteo desconocida.";
   if (mode === "pots") {
-    const unrated = t.teamPool.filter((id) => !isRated(getTeam(id)));
-    if (unrated.length)
-      return `Los bombos se forman con las valoraciones: ${unrated.length} equipos no tienen valoración verificada en ${(t.settings.edition ?? "FC25").replace("FC", "FC ")}. Quítalos o usa otra modalidad.`;
+    const cfg = pots ?? t.potsConfig;
+    if (!cfg) return "Elige cómo formar los bombos.";
+    const err = potsConfigError(t.teamPool, cfg, n, t.settings.allowRepeatTeams, t.settings.edition ?? "FC25");
+    if (err) return err;
   }
   return null;
 }
 
-export function initDraw(t: Tournament, mode: DrawMode): DrawState {
+export function initDraw(t: Tournament, mode: DrawMode, potsCfg?: PotsConfig): DrawState {
   const order = shuffle(t.participants.map((p) => p.id));
   const pool = sanitizePool(t.teamPool, scopeOf(t.settings));
   const state: DrawState = { id: uid("d"), mode, order, cursor: 0, pool, pending: null };
   if (mode === "pots") {
-    state.pots = buildPots(pool, t.participants.length);
+    const cfg = potsCfg ?? t.potsConfig ?? { method: ratingSplit(pool).unrated.length ? ("balanced" as const) : ("rating" as const) };
+    state.pots = buildPotsBy(cfg, pool, t.participants.length);
+    state.potsMethod = cfg.method;
     state.potIndex = 0;
     state.pool = [...state.pots[0]];
   }

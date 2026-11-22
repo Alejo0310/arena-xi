@@ -11,7 +11,8 @@ import { confirmDialog, toast } from "@/components/ui/feedback";
 import { TabBar, TournamentBody, type Tab } from "@/components/tournament/TournamentView";
 import { ChampionOverlay } from "@/components/tournament/Champion";
 import { Portal } from "@/components/ui/Portal";
-import { downloadJson, shareUrl, slug } from "@/lib/share";
+import { ReportExporter, type ExportJob } from "@/components/tournament/ReportExporter";
+import { downloadJson, shareUrl } from "@/lib/share";
 import { PHASE_LABEL, phaseHref } from "@/lib/routes";
 import { useRouter } from "next/navigation";
 
@@ -28,6 +29,7 @@ export default function TournamentPage() {
   }, []);
   const [celebrate, setCelebrate] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [job, setJob] = useState<ExportJob | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const prevChampion = useRef<string | null | undefined>(undefined);
 
@@ -49,21 +51,6 @@ export default function TournamentPage() {
       />
     );
   }
-
-  const exportImage = async () => {
-    if (!bodyRef.current) return;
-    try {
-      const { toPng } = await import("html-to-image");
-      const url = await toPng(bodyRef.current, { backgroundColor: "#05070a", pixelRatio: 2, cacheBust: true });
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${slug(t.name)}-${tab}.png`;
-      a.click();
-      toast.success("Imagen descargada.");
-    } catch {
-      toast.error("No se pudo generar la imagen en este navegador.");
-    }
-  };
 
   const share = async () => {
     const url = await shareUrl(t);
@@ -103,9 +90,9 @@ export default function TournamentPage() {
           <div className="relative">
             <Button variant="secondary" size="sm" onClick={() => setMenu((m) => !m)} aria-expanded={menu}><Download className="size-4" /> Exportar</Button>
             {menu && (
-              <div className="glass absolute right-0 z-30 mt-2 w-52 p-1.5" onClick={() => setMenu(false)}>
-                <MenuItem icon={ImageDown} onClick={exportImage}>Imagen (PNG)</MenuItem>
-                <MenuItem icon={Printer} onClick={() => window.print()}>PDF (imprimir)</MenuItem>
+              <div className="glass absolute right-0 z-30 mt-2 w-60 p-1.5" onClick={() => setMenu(false)}>
+                <MenuItem icon={ImageDown} onClick={() => setJob("png")}>Informe en imagen (PNG)</MenuItem>
+                <MenuItem icon={Printer} onClick={() => setJob("pdf")}>Informe en PDF</MenuItem>
                 <MenuItem icon={FileJson} onClick={() => downloadJson(t)}>Datos (JSON)</MenuItem>
               </div>
             )}
@@ -118,6 +105,7 @@ export default function TournamentPage() {
       <TabBar t={t} tab={tab} setTab={setTab} />
       <TournamentBody ref={bodyRef} t={t} tab={tab} onReplayChampion={() => setCelebrate(true)} />
 
+      <ReportExporter t={t} job={job} onDone={() => setJob(null)} />
       <Portal><AnimatePresence>{celebrate && t.championId && <ChampionOverlay t={t} onClose={() => setCelebrate(false)} />}</AnimatePresence></Portal>
     </div>
   );

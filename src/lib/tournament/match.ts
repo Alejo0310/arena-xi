@@ -30,6 +30,13 @@ export function matchWinner(m: Match): string | null {
   return null;
 }
 
+/** Resultado de la tanda de penaltis ("4-2") cuando el partido terminó empatado y se resolvió desde los once metros. */
+export function shootoutText(m: Pick<Match, "homeGoals" | "awayGoals" | "homePens" | "awayPens">): string | null {
+  if (m.homePens == null || m.awayPens == null) return null;
+  if (m.homeGoals == null || m.homeGoals !== m.awayGoals) return null;
+  return `${m.homePens}-${m.awayPens}`;
+}
+
 export function matchLoser(m: Match): string | null {
   if (m.isBye) return null;
   const w = matchWinner(m);

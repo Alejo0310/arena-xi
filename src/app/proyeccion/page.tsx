@@ -12,6 +12,7 @@ import { MatchTimer } from "@/components/tournament/MatchTimer";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { recentResults, upcomingMatches } from "@/lib/tournament/engine";
 import { getTeam } from "@/lib/teams";
+import { shootoutText } from "@/lib/tournament/match";
 import { Logo } from "@/components/layout/Logo";
 import type { Match, Tournament } from "@/lib/types";
 
@@ -132,7 +133,10 @@ function MiniMatch({ t, m, inline = false }: { t: Tournament; m: Match; inline?:
       {!inline && <span className="w-24 truncate text-xs text-mute">{m.label}</span>}
       <TeamCrest team={getTeam(t.assignments[m.homeId!])} size={24} />
       <span className="font-semibold">{byId.get(m.homeId!)?.name}</span>
-      <span className="display num text-xl font-black text-neon">{done ? `${m.homeGoals ?? "–"} - ${m.awayGoals ?? "–"}` : "vs"}</span>
+      <span className="text-center">
+        <span className="display num block text-xl font-black leading-tight text-neon">{done ? `${m.homeGoals ?? "–"} - ${m.awayGoals ?? "–"}` : "vs"}</span>
+        {done && shootoutText(m) && <span className="num block text-xs font-semibold uppercase leading-tight text-mute">pen. {shootoutText(m)}</span>}
+      </span>
       <span className="font-semibold">{byId.get(m.awayId!)?.name}</span>
       <TeamCrest team={getTeam(t.assignments[m.awayId!])} size={24} />
     </div>

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { BarChart3, CalendarDays, Coffee, GitBranch, LayoutDashboard, ListOrdered, X } from "lucide-react";
 import type { Match, Tournament } from "@/lib/types";
 import { getTeam } from "@/lib/teams";
-import { matchLoser } from "@/lib/tournament/match";
+import { matchLoser, shootoutText } from "@/lib/tournament/match";
 import { recentResults, upcomingMatches } from "@/lib/tournament/engine";
 import { restingInRound } from "@/lib/tournament/league";
 import { computeStats } from "@/lib/tournament/stats";
@@ -111,8 +111,8 @@ function Overview({ t, readOnly, onReplayChampion }: { t: Tournament; readOnly: 
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-4">
           {liveMatch && (
             <section>
               <h3 className="kicker mb-3 !text-blaze">● En juego</h3>
@@ -132,15 +132,15 @@ function Overview({ t, readOnly, onReplayChampion }: { t: Tournament; readOnly: 
           </section>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {knockout ? (
             <section>
               <h3 className="kicker mb-3">Clasificados</h3>
-              <div className="glass grid grid-cols-2 gap-2 p-4">
+              <div className="glass grid grid-cols-1 gap-2 p-4 min-[420px]:grid-cols-2">
                 {t.participants.map((p) => {
                   const on = alive.includes(p.id);
                   return (
-                    <div key={p.id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${on ? "" : "opacity-35 line-through"}`}>
+                    <div key={p.id} className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${on ? "" : "opacity-35 line-through"}`}>
                       <TeamCrest team={getTeam(t.assignments[p.id])} size={22} />
                       <span className="truncate">{p.name}</span>
                     </div>
@@ -159,17 +159,23 @@ function Overview({ t, readOnly, onReplayChampion }: { t: Tournament; readOnly: 
             <div className="glass divide-y divide-line">
               {recent.length === 0 && <p className="p-5 text-center text-sm text-mute">Aún no hay resultados.</p>}
               {recent.map((m) => (
-                <div key={m.id} className="flex items-center gap-2 px-4 py-3 text-sm">
-                  <span className="w-20 shrink-0 truncate text-xs text-mute">{m.label}</span>
-                  <span className="flex flex-1 items-center justify-end gap-1.5 truncate text-right">
-                    {byId.get(m.homeId!)?.name}
-                    <TeamCrest team={getTeam(t.assignments[m.homeId!])} size={20} />
-                  </span>
-                  <span className="display num w-14 shrink-0 text-center text-lg font-black">{m.homeGoals ?? "–"}-{m.awayGoals ?? "–"}</span>
-                  <span className="flex flex-1 items-center gap-1.5 truncate">
-                    <TeamCrest team={getTeam(t.assignments[m.awayId!])} size={20} />
-                    {byId.get(m.awayId!)?.name}
-                  </span>
+                <div key={m.id} className="px-3 py-3 text-sm sm:px-4" data-testid="recent-result">
+                  <div className="mb-1.5 truncate text-[0.7rem] font-semibold uppercase tracking-wider text-mute sm:hidden">{m.label}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden w-20 shrink-0 truncate text-xs text-mute sm:block">{m.label}</span>
+                    <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5 text-right">
+                      <span className="truncate">{byId.get(m.homeId!)?.name}</span>
+                      <TeamCrest team={getTeam(t.assignments[m.homeId!])} size={20} />
+                    </span>
+                    <span className="w-16 shrink-0 text-center">
+                      <span className="display num block text-lg font-black leading-tight">{m.homeGoals ?? "–"}-{m.awayGoals ?? "–"}</span>
+                      {shootoutText(m) && <span className="num block text-[0.65rem] font-semibold uppercase leading-tight text-mute" data-testid="recent-pens">pen. {shootoutText(m)}</span>}
+                    </span>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <TeamCrest team={getTeam(t.assignments[m.awayId!])} size={20} />
+                      <span className="truncate">{byId.get(m.awayId!)?.name}</span>
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

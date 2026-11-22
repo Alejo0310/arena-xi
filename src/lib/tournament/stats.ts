@@ -114,3 +114,99 @@ export function historicalRanking(tournaments: Tournament[]): HistoricalRow[] {
   }
   return [...rows.values()].sort((a, b) => b.titles - a.titles || b.podiums - a.podiums || b.won - a.won || (b.gf - b.ga) - (a.gf - a.ga));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Informe del torneo (exportación a PNG/PDF): estadísticas ampliadas
+// ---------------------------------------------------------------------------------------------
+
+export interface ShootoutInfo {
+  match: Match;
+  winnerId: string;
+  home: string;
+  away: string;
+  /** Marcador de la tanda desde el punto de vista del local, p. ej. "4-2". */
+  pens: string;
+}
+
+export interface TournamentReport extends TournamentStats {
+  /** Partidos decididos por penaltis (empate + tanda). */
+  shootouts: ShootoutInfo[];
+  /** Victorias por penaltis de cada participante. */
+  penaltyWins: Map<string, number>;
+  /** Partidos con la portería a cero (goles recibidos = 0) por participante. */
+  cleanSheets: Map<string, number>;
+  /** Mejor racha de victorias consecutivas por participante. */
+  bestStreak: Map<string, number>;
+  /** Participantes que no han perdido ningún partido. */
+  unbeaten: string[];
+  /** Goles marcados en cada ronda (eliminatorias) o jornada (liga). */
+  goalsByRound: { round: number; label: string; goals: number; matches: number }[];
+  /** Camino del campeón: sus partidos jugados, en orden. */
+  championPath: Match[];
+  podium: { first: string | null; second: string | null; third: string | null } | null;
+  /** Partidos que terminaron igualados en el marcador. */
+  draws: number;
+  homeWins: number;
+  awayWins: number;
+}
+
+const byOrder = (a: Match, b: Match) => (a.playedAt ?? 0) - (b.playedAt ?? 0) || a.round - b.round || (a.slot ?? 0) - (b.slot ?? 0);
+
+export function computeReport(t: Tournament): TournamentReport {
+  const base = computeStats(t.participants, t.matches);
+  const played = t.matches.filter(isPlayed).sort(byOrder);
+  const nameOf = (id: string) => t.participants.find((p) => p.id === id)?.name ?? "—";
+
+  const shootouts: ShootoutInfo[] = [];
+  const penaltyWins = new Map<string, number>();
+  const cleanSheets = new Map<string, number>();
+  const streak = new Map<string, number>();
+  const bestStreak = new Map<string, number>();
+  const losers = new Set<string>();
+  let draws = 0;
+  let homeWins = 0;
+  let awayWins = 0;
+
+  for (const m of played) {
+    const w = matchWinner(m);
+    const hasPens = m.homePens != null && m.awayPens != null && m.homeGoals === m.awayGoals;
+    if (hasPens && w) {
+      shootouts.push({ match: m, winnerId: w, home: nameOf(m.homeId!), away: nameOf(m.awayId!), pens: `${m.homePens}-${m.awayPens}` });
+      penaltyWins.set(w, (penaltyWins.get(w) ?? 0) + 1);
+    }
+    if (hasScore(m) && m.homeGoals === m.awayGoals) draws++;
+    if (w === m.homeId) homeWins++;
+    else if (w === m.awayId) awayWins++;
+    if (hasScore(m) && !m.walkover) {
+      if (m.awayGoals === 0) cleanSheets.set(m.homeId!, (cleanSheets.get(m.homeId!) ?? 0) + 1);
+      if (m.homeGoals === 0) cleanSheets.set(m.awayId!, (cleanSheets.get(m.awayId!) ?? 0) + 1);
+    }
+    for (const id of [m.homeId!, m.awayId!]) {
+      if (w === id) {
+        const s = (streak.get(id) ?? 0) + 1;
+        streak.set(id, s);
+        bestStreak.set(id, Math.max(bestStreak.get(id) ?? 0, s));
+      } else {
+        streak.set(id, 0);
+      }
+    }
+    if (w) losers.add(w === m.homeId ? m.awayId! : m.homeId!);
+  }
+  const unbeaten = base.perParticipant.filter((s) => s.played > 0 && !losers.has(s.participantId)).map((s) => s.participantId);
+
+  const rounds = [...new Set(t.matches.filter((m) => !m.isThirdPlace).map((m) => m.round))].sort((a, b) => a - b);
+  const goalsByRound = rounds.map((r) => {
+    const ms = played.filter((m) => m.round === r && hasScore(m));
+    return {
+      round: r,
+      label: t.matches.find((m) => m.round === r)?.label ?? `Ronda ${r}`,
+      goals: ms.reduce((s, m) => s + (m.homeGoals ?? 0) + (m.awayGoals ?? 0), 0),
+      matches: ms.length,
+    };
+  });
+
+  const podium = t.settings.format === "knockout" ? knockoutPodium(t.matches) : null;
+  const championPath = t.championId ? played.filter((m) => m.homeId === t.championId || m.awayId === t.championId) : [];
+
+  return { ...base, shootouts, penaltyWins, cleanSheets, bestStreak, unbeaten, goalsByRound, championPath, podium, draws, homeWins, awayWins };
+}

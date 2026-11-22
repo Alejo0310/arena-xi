@@ -186,6 +186,16 @@ body {
   }
 }
 
+/* Informe del torneo (PDF): conserva los colores de la web y ajusta el ancho a una hoja A4 */
+@page report { size: A4; margin: 0; }
+@media print {
+  html.printing-report, html.printing-report body { background: #05070a !important; color: #fff !important; }
+  html.printing-report body > *:not(#report-root) { display: none !important; }
+  html.printing-report #report-root { position: static !important; left: auto !important; top: auto !important; width: auto !important; page: report; }
+  html.printing-report #report-root .report { zoom: 0.794; }
+  html.printing-report * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+
 /* Impresión / exportar a PDF */
 @media print {
   @page { margin: 12mm; }

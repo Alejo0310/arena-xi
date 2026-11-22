@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { FlagSpec, Team } from "@/lib/types";
 
 const SHIELD = "M24 2 L45 9 V27 C45 41 35 50 24 54 C13 50 3 41 3 27 V9 Z";
@@ -19,7 +20,9 @@ export function TeamCrest({ team, size = 40, className = "" }: { team?: Team; si
 
 function ClubCrest({ team, size, className }: { team: Team; size: number; className: string }) {
   const [a, b] = team.colors;
-  const gid = `g-${team.id}`;
+  // Id único por instancia: un mismo equipo aparece varias veces (p. ej. en el informe) y un id repetido dentro de un
+  // contenedor oculto hace que el degradado deje de pintarse en las demás copias.
+  const gid = `g-${useId().replace(/:/g, "")}`;
   const fs = team.short.length > 3 ? 13 : 15;
   return (
     <svg width={size} height={size} viewBox="0 0 48 56" className={`shrink-0 ${className}`} role="img" aria-label={`Insignia de ${team.name}`}>
@@ -39,7 +42,7 @@ function ClubCrest({ team, size, className }: { team: Team; size: number; classN
 }
 
 function NationalCrest({ team, flag, size, className }: { team: Team; flag: FlagSpec; size: number; className: string }) {
-  const cid = `f-${team.id}`;
+  const cid = `f-${useId().replace(/:/g, "")}`;
   return (
     <svg width={size} height={size} viewBox="0 0 48 56" className={`shrink-0 ${className}`} role="img" aria-label={`Bandera de la selección de ${team.name}`}>
       <defs>

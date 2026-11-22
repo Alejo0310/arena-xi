@@ -78,4 +78,51 @@ test.describe("informe del torneo", () => {
     await page.goto(`/compartir#${old}`);
     await expect(page.getByRole("heading", { level: 1 })).toContainText(t.name);
   });
+
+  test("enlace corto: nombre del torneo + código único, y se abre desde el servidor", async ({ page }) => {
+    const t = finishedTournament("knockout", 8);
+    await seed(page, t);
+    // Servidor simulado (en producción lo atiende /api/compartir con la base de datos).
+    const saved = new Map<string, string>();
+    await page.route("**/api/compartir", async (route) => {
+      const { data, base } = route.request().postDataJSON() as { data: string; base: string };
+      const id = `${base}-k7x9q2`;
+      saved.set(id, data);
+      await route.fulfill({ json: { id } });
+    });
+    await page.route("**/api/compartir/*", async (route) => {
+      const id = decodeURIComponent(route.request().url().split("/").pop()!);
+      const data = saved.get(id);
+      await route.fulfill(data ? { json: { data } } : { status: 404, json: { error: "not-found" } });
+    });
+
+    await page.goto("/torneo");
+    await page.getByRole("button", { name: /Compartir/ }).click();
+    await expect(page.getByTestId("share-name")).toHaveValue("TorneoDelSexo"); // sugerido a partir del nombre
+    await page.getByTestId("share-name").fill("Copa de los Cracks");
+    await expect(page.getByTestId("share-preview")).toContainText("CopaDeLosCracks");
+    await page.getByTestId("share-create").click();
+    const link = await page.getByLabel("Enlace corto").inputValue();
+    expect(link).toMatch(/\/compartir#CopaDeLosCracks-k7x9q2$/);
+    expect(link.length).toBeLessThan(80);
+
+    // Abrir el enlace corto muestra el torneo (datos obtenidos del servidor).
+    await page.goto(link);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(t.name);
+    await expect(page.getByTestId("recent-pens").first()).toContainText(/pen\. \d+-\d+/);
+
+    // Un enlace que no existe o caducó muestra el aviso.
+    await page.goto("/compartir#NoExiste-abc123");
+    await expect(page.getByText(/Enlace no válido/)).toBeVisible();
+  });
+
+  test("sin almacenamiento en el servidor se explica y se ofrece el enlace largo", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+    await seed(page, finishedTournament("knockout", 8));
+    await page.goto("/torneo");
+    await page.getByRole("button", { name: /Compartir/ }).click();
+    await page.getByTestId("share-create").click(); // el servidor local no tiene base de datos: responde 501
+    await expect(page.getByTestId("share-problem")).toContainText(/aún no están activados/);
+    await expect(page.getByTestId("share-long")).toBeVisible();
+  });
 });

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Eye, Download } from "lucide-react";
-import { decodeTournament } from "@/lib/share";
+import { decodeTournament, fetchShortLink } from "@/lib/share";
+import { isShortId } from "@/lib/shortLink";
 import type { Tournament } from "@/lib/types";
 import { normalizeTournament, useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
@@ -22,7 +23,13 @@ export default function SharedPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const read = () => void decodeTournament(window.location.hash.slice(1)).then((x) => setT(x ? normalizeTournament(x) : null));
+    const read = () => {
+      const h = decodeURIComponent(window.location.hash.slice(1));
+      setT(undefined);
+      // Enlace corto (NombreDelTorneo-xxxxxx): los datos están en el servidor. Si no, el torneo viaja en la propia URL.
+      const load = isShortId(h) ? fetchShortLink(h) : decodeTournament(h);
+      void load.then((x) => setT(x ? normalizeTournament(x) : null));
+    };
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
@@ -37,7 +44,7 @@ export default function SharedPage() {
 
   if (t === undefined) return <Loader />;
   if (t === null) {
-    return <EmptyState icon={<Eye className="size-8" />} title="Enlace no válido" body="El enlace está incompleto o dañado." action={<Link href="/"><Button>Ir al inicio</Button></Link>} />;
+    return <EmptyState icon={<Eye className="size-8" />} title="Enlace no válido" body="El enlace está incompleto, ha caducado o está dañado." action={<Link href="/"><Button>Ir al inicio</Button></Link>} />;
   }
 
   const save = () => {

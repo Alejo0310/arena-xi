@@ -335,6 +335,38 @@ export function isTournament(x: unknown): x is Tournament {
   return !!t && typeof t.id === "string" && typeof t.name === "string" && Array.isArray(t.participants) && Array.isArray(t.matches) && !!t.settings;
 }
 
+export type ShortLinkResult = { url: string } | { error: "no-storage" | "rate-limited" | "network" | "invalid" };
+
+/**
+ * Enlace corto: guarda el torneo en el servidor y devuelve /compartir#<NombreDelTorneo>-<sufijo>.
+ * Si el servidor no tiene almacenamiento configurado (o falla), el llamador usa el enlace largo.
+ */
+export async function createShortLink(t: Tournament, base: string): Promise<ShortLinkResult> {
+  const data = await encodeTournament(t);
+  try {
+    const res = await fetch("/api/compartir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, base }) });
+    if (res.status === 501) return { error: "no-storage" };
+    if (res.status === 429) return { error: "rate-limited" };
+    if (!res.ok) return { error: "invalid" };
+    const { id } = (await res.json()) as { id: string };
+    return { url: `${window.location.origin}/compartir#${id}` };
+  } catch {
+    return { error: "network" };
+  }
+}
+
+/** Descarga un torneo guardado con un enlace corto. */
+export async function fetchShortLink(id: string): Promise<Tournament | null> {
+  try {
+    const res = await fetch(`/api/compartir/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const { data } = (await res.json()) as { data?: string };
+    return data ? await decodeTournament(data) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function shareUrl(t: Tournament): Promise<string> {
   return `${window.location.origin}/compartir#${await encodeTournament(t)}`;
 }

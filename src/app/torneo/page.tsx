@@ -7,12 +7,13 @@ import { Download, FileJson, ImageDown, Link2, MonitorPlay, Plus, Printer, Rotat
 import { useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader, useHydrated } from "@/components/ui/bits";
-import { confirmDialog, toast } from "@/components/ui/feedback";
+import { confirmDialog } from "@/components/ui/feedback";
 import { TabBar, TournamentBody, type Tab } from "@/components/tournament/TournamentView";
 import { ChampionOverlay } from "@/components/tournament/Champion";
 import { Portal } from "@/components/ui/Portal";
 import { ReportExporter, type ExportJob } from "@/components/tournament/ReportExporter";
-import { downloadJson, shareUrl } from "@/lib/share";
+import { downloadJson } from "@/lib/share";
+import { ShareDialog } from "@/components/tournament/ShareDialog";
 import { PHASE_LABEL, phaseHref } from "@/lib/routes";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +31,7 @@ export default function TournamentPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [menu, setMenu] = useState(false);
   const [job, setJob] = useState<ExportJob | null>(null);
+  const [sharing, setSharing] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const prevChampion = useRef<string | null | undefined>(undefined);
 
@@ -52,20 +54,6 @@ export default function TournamentPage() {
     );
   }
 
-  const share = async () => {
-    const url = await shareUrl(t);
-    try {
-      if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
-        await navigator.share({ title: t.name, url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        toast.success("Enlace copiado: cualquiera podrá ver una instantánea del torneo.");
-      }
-    } catch {
-      toast.info("No se pudo copiar automáticamente. Usa el botón de exportar JSON.");
-    }
-  };
-
   const restart = async (keep: boolean) => {
     const ok = await confirmDialog({
       title: keep ? "¿Revancha con los mismos jugadores?" : "¿Nuevo torneo?",
@@ -86,7 +74,7 @@ export default function TournamentPage() {
         </div>
         <div className="no-print flex flex-wrap gap-2">
           <Link href="/proyeccion"><Button variant="secondary" size="sm"><MonitorPlay className="size-4" /> Proyección</Button></Link>
-          <Button variant="secondary" size="sm" onClick={share}><Link2 className="size-4" /> Compartir</Button>
+          <Button variant="secondary" size="sm" onClick={() => setSharing(true)}><Link2 className="size-4" /> Compartir</Button>
           <div className="relative">
             <Button variant="secondary" size="sm" onClick={() => setMenu((m) => !m)} aria-expanded={menu}><Download className="size-4" /> Exportar</Button>
             {menu && (
@@ -106,6 +94,7 @@ export default function TournamentPage() {
       <TournamentBody ref={bodyRef} t={t} tab={tab} onReplayChampion={() => setCelebrate(true)} />
 
       <ReportExporter t={t} job={job} onDone={() => setJob(null)} />
+      <ShareDialog t={t} open={sharing} onClose={() => setSharing(false)} />
       <Portal><AnimatePresence>{celebrate && t.championId && <ChampionOverlay t={t} onClose={() => setCelebrate(false)} />}</AnimatePresence></Portal>
     </div>
   );

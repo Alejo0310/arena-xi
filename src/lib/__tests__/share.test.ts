@@ -17,8 +17,41 @@ describe("enlaces para compartir", () => {
       const oldLen = legacyLink(t).length;
       const newLen = (await encodeTournament(t)).length;
       console.log(`${fmt} ${n}: antes ${oldLen} → ahora ${newLen} caracteres (${Math.round((newLen / oldLen) * 100)}%)`);
-      expect(newLen).toBeLessThan(oldLen * 0.6);
+      expect(newLen).toBeLessThan(oldLen * 0.3);
     }
+  });
+
+  it("v3: el calendario se regenera y funciona con cualquier número de participantes y formato", async () => {
+    for (const fmt of ["knockout", "league"] as const) {
+      for (const n of [3, 4, 5, 6, 7, 8]) {
+        const t = finishedTournament(fmt, n);
+        const link = await encodeTournament(t);
+        expect(link.startsWith("v3."), `${fmt} ${n} debería usar v3`).toBe(true);
+        const back = (await decodeTournament(link))!;
+        const nm = (x: Tournament, id: string | null) => x.participants.find((p) => p.id === id)?.name ?? null;
+        expect(back.matches.length).toBe(t.matches.length);
+        t.matches.forEach((m, i) => {
+          const b2 = back.matches[i];
+          expect([nm(back, b2.homeId), nm(back, b2.awayId), b2.homeGoals, b2.awayGoals, b2.homePens ?? null, b2.status, b2.label, b2.round])
+            .toEqual([nm(t, m.homeId), nm(t, m.awayId), m.homeGoals, m.awayGoals, m.homePens ?? null, m.status, m.label, m.round]);
+        });
+        expect(nm(back, back.championId)).toBe(nm(t, t.championId));
+        expect(back.phase).toBe(t.phase);
+        const full = (await encodeTournament({ ...t, matches: t.matches.map((m) => ({ ...m })) })).length;
+        console.log(`v3 ${fmt} ${n}: ${full} caracteres`);
+      }
+    }
+  });
+
+  it("v3: un torneo a medias (partidos pendientes y uno en juego) también se conserva", async () => {
+    const t = finishedTournament("knockout", 8);
+    const half: Tournament = { ...t, phase: "playing", championId: null, finishedAt: undefined, matches: t.matches.map((m, i) => (m.round >= 2 ? { ...m, homeGoals: null, awayGoals: null, homePens: null, awayPens: null, status: i === 4 ? "live" : "pending", manualWinnerId: null } : m)) };
+    const link = await encodeTournament(half);
+    expect(link.startsWith("v3.")).toBe(true);
+    const back = (await decodeTournament(link))!;
+    expect(back.phase).toBe("playing");
+    expect(back.matches.filter((m) => m.status === "done" && !m.isBye).length).toBe(half.matches.filter((m) => m.status === "done" && !m.isBye).length);
+    expect(back.matches.find((m) => m.round === 2)?.homeId).not.toBeNull(); // los clasificados de la ronda 1 se resuelven
   });
 
   it("ida y vuelta: el torneo recuperado da los mismos ganadores, marcadores, penaltis y estadísticas", async () => {

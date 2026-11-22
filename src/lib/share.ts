@@ -1,4 +1,8 @@
 import type { FlagSpec, GameEdition, Gender, Match, Team, Tournament } from "./types";
+import { PLAYER_COLORS } from "./names";
+import { generateKnockout, resolveKnockout, seedOrder, bracketSize } from "./tournament/knockout";
+import { generateLeague } from "./tournament/league";
+import { getLiveTeam, getTeam } from "./teams";
 
 /*
  * Compartir sin servidor: el torneo viaja dentro del propio enlace (fragmento #, que nunca se envía al
@@ -102,13 +106,212 @@ export function expandTournament(c: Compact): Tournament {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Formato v3 (el más corto): el calendario / cuadro NO viaja, se regenera al abrir el enlace.
+// Solo se guardan: orden de siembra, resultados y equipos (por id cuando coinciden con el catálogo).
+// ---------------------------------------------------------------------------------------------
+
+const V3 = "v3.";
+type ResultC = 0 | [status: number, hg: Num, ag: Num, hp: Num, ap: Num, manual: Num, wo: number, playedAt: Num];
+type CompactV3 = [name: string, created: number, finished: Num, phase: number, champion: number, settings: Num[], participants: [string, number | string][], order: number[], teams: (string | CompactTeam)[], results: ResultC[]];
+
+/** Genera los partidos igual que buildMatches, a partir del orden de siembra. */
+function regenerate(format: "league" | "knockout", order: string[], legs: 1 | 2, thirdPlace: boolean): Match[] {
+  return format === "league" ? generateLeague(order, legs) : generateKnockout(order, { thirdPlace });
+}
+
+/** Recupera el orden de siembra a partir de los partidos (inverso de generateKnockout / generateLeague). */
+function recoverOrder(t: Tournament): string[] | null {
+  const n = t.participants.length;
+  if (t.settings.format === "knockout") {
+    const r1 = t.matches.filter((m) => m.round === 1 && !m.isThirdPlace).sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
+    const size = bracketSize(n);
+    const so = seedOrder(size);
+    const order: (string | null)[] = Array(n).fill(null);
+    for (let k = 0; k < size; k++) {
+      const m = r1[k >> 1];
+      const id = m ? (k % 2 === 0 ? m.homeId : m.awayId) : null;
+      if (id && so[k] <= n) order[so[k] - 1] = id;
+    }
+    return order.every(Boolean) ? (order as string[]) : null;
+  }
+  // Liga: ronda 1 por el método del círculo (se deshace el intercambio de localía).
+  const total = n % 2 ? n + 1 : n;
+  const list: (string | null)[] = Array(total).fill(null);
+  const m1 = t.matches.filter((m) => m.round === 1);
+  const odd = n % 2 === 1;
+  const used = new Set<string>();
+  let mi = 0;
+  for (let i = 0; i < total / 2; i++) {
+    if (odd && i === 0) continue; // la pareja (rot[0], null) no genera partido
+    const m = m1[mi++];
+    if (!m || !m.homeId || !m.awayId) return null;
+    const swapped = i > 0 && i % 2 === 1;
+    list[i] = swapped ? m.awayId : m.homeId;
+    list[total - 1 - i] = swapped ? m.homeId : m.awayId;
+    used.add(m.homeId);
+    used.add(m.awayId);
+  }
+  if (odd) list[0] = t.participants.find((p) => !used.has(p.id))?.id ?? null;
+  const order = list.filter((x): x is string => x !== null);
+  return order.length === n && new Set(order).size === n ? order : null;
+}
+
+/** Estructura de un cuadro sin resultados: lo que debe coincidir entre el torneo original y el regenerado. */
+function skeleton(ms: Match[], knockout: boolean) {
+  return ms.map((m) => ({
+    id: m.id, round: m.round, label: m.label, bye: !!m.isBye, third: !!m.isThirdPlace,
+    // En eliminatorias solo la primera ronda tiene participantes fijos; el resto depende de los resultados.
+    home: !knockout || m.round === 1 ? m.homeId : null, away: !knockout || m.round === 1 ? m.awayId : null,
+  }));
+}
+
+/** Representación v3, o null si el torneo no se puede reconstruir de forma idéntica (se usa entonces v2). */
+export function compactV3(t: Tournament): CompactV3 | null {
+  const order = recoverOrder(t);
+  if (!order) return null;
+  const s = t.settings;
+  const knockout = s.format === "knockout";
+  const regen = regenerate(s.format, order, s.legs, s.thirdPlace);
+  // Comprobación de seguridad: el cuadro regenerado debe ser idéntico al original.
+  if (JSON.stringify(skeleton(regen, knockout)) !== JSON.stringify(skeleton(t.matches, knockout))) return null;
+
+  const pIdx = new Map(t.participants.map((p, i) => [p.id, i]));
+  const v2 = compactTournament(t);
+  const teams = t.participants.map((p, i): string | CompactTeam => {
+    const id = t.assignments[p.id];
+    const snap = t.snapshot?.[id];
+    const live = getLiveTeam(id);
+    if (live && snap && live.name === snap.name && live.ovr === snap.ovr && live.att === snap.att && live.mid === snap.mid && live.def === snap.def && live.short === snap.short) return id;
+    return v2[7][v2[8].find((a) => a[0] === i)?.[1] ?? 0];
+  });
+  const results = t.matches.map((m): ResultC => {
+    if (m.isBye || (m.status === "pending" && m.homeGoals === null && m.awayGoals === null)) return 0;
+    return [m.status === "live" ? 1 : 2, m.homeGoals, m.awayGoals, m.homePens ?? null, m.awayPens ?? null, m.manualWinnerId ? (pIdx.get(m.manualWinnerId) ?? null) : null, m.walkover ? 1 : 0, m.playedAt ? Math.round((m.playedAt - t.createdAt) / 1000) : null];
+  });
+  return [
+    t.name, t.createdAt, t.finishedAt ?? null, PHASES.indexOf(t.phase), t.championId ? (pIdx.get(t.championId) ?? -1) : -1,
+    v2[5],
+    t.participants.map((p) => {
+      const ci = PLAYER_COLORS.indexOf(p.color);
+      return [p.name, ci >= 0 ? ci : p.color] as [string, number | string];
+    }),
+    order.map((id) => pIdx.get(id)!),
+    teams,
+    results,
+  ];
+}
+
+export async function expandV3(c: CompactV3): Promise<Tournament> {
+  const [name, created, finished, phase, champion, st, parts, orderIdx, teamsC, resultsC] = c;
+  const participants = parts.map(([n, color], i) => ({ id: `p${i}`, name: n, color: typeof color === "number" ? PLAYER_COLORS[color] : color }));
+  const format = st[0] ? "knockout" : "league";
+  const legs: 1 | 2 = st[4] === 2 ? 2 : 1;
+  let matches = regenerate(format, orderIdx.map((i) => `p${i}`), legs, !!st[5]);
+
+  const apply = (m: Match, r: ResultC): Match =>
+    r === 0
+      ? m
+      : {
+          ...m,
+          status: r[0] === 1 ? "live" : "done", homeGoals: r[1], awayGoals: r[2],
+          ...(r[3] !== null ? { homePens: r[3] } : {}), ...(r[4] !== null ? { awayPens: r[4] } : {}),
+          ...(r[5] !== null ? { manualWinnerId: `p${r[5]}` } : {}), ...(r[6] ? { walkover: true } : {}),
+          ...(r[7] !== null ? { playedAt: created + r[7] * 1000 } : {}),
+        };
+
+  if (format === "knockout") {
+    // Ronda a ronda: primero se resuelven los participantes y luego se aplican los resultados (si no, se borrarían).
+    const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+    for (const rd of rounds) {
+      matches = resolveKnockout(matches);
+      matches = matches.map((m, i) => (m.round === rd ? apply(m, resultsC[i]) : m));
+    }
+  } else {
+    matches = matches.map((m, i) => apply(m, resultsC[i]));
+  }
+
+  // Equipos: por id (se resuelven con el catálogo de la edición) o completos.
+  const edition = EDITIONS[st[2]!] ?? "FC25";
+  const snapshot: Record<string, Team> = {};
+  const assignments: Record<string, string> = {};
+  if (teamsC.some((x) => typeof x === "string" && !getTeam(x))) {
+    try {
+      await (await import("./catalog")).loadCatalog(edition);
+    } catch {
+      /* se usará un marcador */
+    }
+  }
+  teamsC.forEach((x, i) => {
+    if (typeof x === "string") {
+      const live = getTeam(x);
+      snapshot[x] = live
+        ? { ...live }
+        : { id: x, kind: "club", name: x, short: x.slice(0, 3).toUpperCase(), league: "", country: "", ovr: null, att: null, mid: null, def: null, colors: ["#555555", "#999999"], source: "enlace compartido" };
+      assignments[`p${i}`] = x;
+    } else {
+      const [id, n, short, league, country, kind, ed, g, ovr, att, mid, def, c1, c2, flag, real] = x;
+      snapshot[id] = { id, kind: kind ? "national" : "club", edition: EDITIONS[ed] ?? "FC25", gender: GENDERS[g] ?? "men", name: n, short, league, country, ovr, att, mid, def, colors: [c1, c2], ...(flag ? { flag } : {}), ...(real ? { realName: real } : {}), source: "enlace compartido" };
+      assignments[`p${i}`] = id;
+    }
+  });
+
+  return {
+    id: "shared", name, createdAt: created, updatedAt: finished ?? created, ...(finished ? { finishedAt: finished } : {}),
+    phase: PHASES[phase] ?? "playing",
+    settings: { format, category: st[1] ? "national" : "club", edition, gender: GENDERS[st[3]!] ?? "men", legs, thirdPlace: !!st[5], tiebreak: st[6] ? "h2h" : "gd", points: { win: st[7]!, draw: st[8]!, loss: st[9]! }, matchMinutes: st[10]!, allowRepeatTeams: !!st[11] },
+    participants, teamPool: Object.keys(snapshot), snapshot, assignments, drawHistory: [], draw: null, matches, championId: champion >= 0 ? `p${champion}` : null,
+  };
+}
+
+// --- Compresión: se elige la más corta entre deflate nativo (base64url) y lz-string -------------
+
+const toB64Url = (buf: Uint8Array) => {
+  let s = "";
+  for (const byte of buf) s += String.fromCharCode(byte);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const fromB64Url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
+
+async function through(data: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+  const out = new Response(new Blob([data as BlobPart]).stream().pipeThrough(stream as unknown as ReadableWritablePair<Uint8Array, Uint8Array>));
+  return new Uint8Array(await out.arrayBuffer());
+}
+const hasStreams = () => typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
+
+async function pack(json: string): Promise<string> {
+  const lzOut = (await lz()).compressToEncodedURIComponent(json);
+  if (!hasStreams()) return V3 + lzOut;
+  try {
+    const z = toB64Url(await through(new TextEncoder().encode(json), new CompressionStream("deflate-raw")));
+    return z.length + 1 < lzOut.length ? `${V3}z${z}` : V3 + lzOut;
+  } catch {
+    return V3 + lzOut;
+  }
+}
+
+async function unpack(body: string): Promise<string | null> {
+  if (body.startsWith("z")) return new TextDecoder().decode(await through(fromB64Url(body.slice(1)), new DecompressionStream("deflate-raw")));
+  return (await lz()).decompressFromEncodedURIComponent(body);
+}
+
 export async function encodeTournament(t: Tournament): Promise<string> {
+  const v3 = compactV3(t);
+  if (v3) return pack(JSON.stringify(v3));
   return V2 + (await lz()).compressToEncodedURIComponent(JSON.stringify(compactTournament(t)));
 }
 
 export async function decodeTournament(data: string): Promise<Tournament | null> {
   try {
     const L = await lz();
+    if (data.startsWith(V3)) {
+      const json = await unpack(data.slice(V3.length));
+      if (!json) return null;
+      const c = JSON.parse(json) as CompactV3;
+      if (!Array.isArray(c) || c.length < 10) return null;
+      const t = await expandV3(c);
+      return isTournament(t) ? t : null;
+    }
     if (data.startsWith(V2)) {
       const json = L.decompressFromEncodedURIComponent(data.slice(V2.length));
       if (!json) return null;

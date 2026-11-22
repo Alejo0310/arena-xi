@@ -66,7 +66,8 @@ test.describe("informe del torneo", () => {
   test("el enlace de compartir es corto y abre el torneo con llaves, penaltis y campeón", async ({ page }) => {
     const t = finishedTournament("knockout", 8);
     const link = await encodeTournament(t);
-    expect(link.length).toBeLessThan(1600);
+    expect(link.startsWith("v3.")).toBe(true);
+    expect(link.length).toBeLessThan(700);
     await page.goto(`/compartir#${link}`);
     await expect(page.getByRole("heading", { level: 1 })).toContainText(t.name);
     await expect(page.getByTestId("recent-pens").first()).toContainText(/pen\. \d+-\d+/);

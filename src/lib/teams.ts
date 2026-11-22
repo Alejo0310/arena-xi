@@ -98,6 +98,11 @@ export function getTeam(id: string | null | undefined, snapshot?: Record<string,
   return snapshot?.[id] ?? activeSnapshot?.[id] ?? REGISTRY.get(id);
 }
 
+/** Equipo del catálogo vivo, sin tener en cuenta ninguna instantánea de torneo. */
+export function getLiveTeam(id: string | null | undefined): Team | undefined {
+  return id ? REGISTRY.get(id) : undefined;
+}
+
 /** Copia congelada de los equipos indicados, para guardarla en el torneo. */
 export function snapshotOf(ids: Iterable<string>, previous?: Record<string, Team>): Record<string, Team> {
   const out: Record<string, Team> = {};

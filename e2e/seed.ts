@@ -3,7 +3,7 @@ import { buildMatches, recordResult, upcomingMatches } from "../src/lib/tourname
 import { DEFAULT_CLUB_POOL, snapshotOf } from "../src/lib/teams";
 import type { Tournament } from "../src/lib/types";
 
-export const NAMES = ["alejo el tochi perez", "dadis el deiv 2126133", "tomas el gorras porras", "juanjo el gusano marin", "simon el negro infiel", "isaac el hongo pg perez", "dani el amarrado tamayo", "tomas el lindo"];
+export const NAMES = ["Nico Prueba", "Mia Prueba", "Olga Prueba", "Pau Prueba", "Ana Prueba", "Beto Prueba", "Leo Prueba", "Eva Prueba"];
 const COLORS = ["#3dff8b", "#2f9bff", "#ff7a1a", "#ffd23d", "#1de9d6", "#ff4f6d", "#c084fc", "#f5f5f5"];
 
 /** Resultados de partida deterministas: algunos empates que se deciden por penaltis (solo en eliminatorias). */
@@ -19,7 +19,7 @@ export function finishedTournament(format: "knockout" | "league" = "knockout", n
   const participants = NAMES.slice(0, n).map((name, i) => ({ id: `p${i}`, name, color: COLORS[i] }));
   const assignments = Object.fromEntries(participants.map((p, i) => [p.id, pool[i]]));
   let t: Tournament = {
-    id: "t_seed", name: "TORNEO DEL SEXO", createdAt: Date.UTC(2026, 10, 21, 18, 0), updatedAt: Date.now(), phase: "playing",
+    id: "t_seed", name: "GRAN PREMIO GALACTICA", createdAt: Date.UTC(2026, 10, 21, 18, 0), updatedAt: Date.now(), phase: "playing",
     settings: { format, category: "club", edition: "FC25", gender: "men", legs: 1, thirdPlace: true, tiebreak: "gd", points: { win: 3, draw: 1, loss: 0 }, allowRepeatTeams: false, matchMinutes: 12 },
     participants, teamPool: pool, snapshot: snapshotOf(pool), assignments, drawHistory: [], draw: null, matches: [], championId: null,
   };

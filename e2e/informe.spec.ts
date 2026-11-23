@@ -98,7 +98,7 @@ test.describe("informe del torneo", () => {
 
     await page.goto("/torneo");
     await page.getByRole("button", { name: /Compartir/ }).click();
-    await expect(page.getByTestId("share-name")).toHaveValue("TorneoDelSexo"); // sugerido a partir del nombre
+    await expect(page.getByTestId("share-name")).toHaveValue("GranPremioGalactica"); // sugerido a partir del nombre
     await page.getByTestId("share-name").fill("Copa de los Cracks");
     await expect(page.getByTestId("share-preview")).toContainText("CopaDeLosCracks");
     await page.getByTestId("share-create").click();

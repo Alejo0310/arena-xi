@@ -220,6 +220,10 @@ test.describe("invitaciones: permisos y resultados", () => {
     await card2.getByRole("button", { name: /Registrar/ }).click();
     await expect.poll(async () => ((await (await request.get(`/api/sala/${roomId}`)).json()).tournament.matches as { status: string; isBye?: boolean }[]).filter((m) => m.status === "done" && !m.isBye).length).toBe(2);
 
+    // El host espera a ver reflejados los resultados de los invitados (así no reescribe un partido ya registrado).
+    await expect
+      .poll(() => page.evaluate(() => (JSON.parse(localStorage.getItem("arena-xi")!).state.current.matches as { status: string; isBye?: boolean }[]).filter((m) => m.status === "done" && !m.isBye).length), { timeout: 30_000 })
+      .toBe(2);
     // El registro manual del host sigue funcionando en el mismo torneo (el host registra en la sala y en local).
     await page.getByRole("tab", { name: /Partidos|Calendario/ }).click();
     await expect(page.getByText("Próximos enfrentamientos")).toHaveCount(0);

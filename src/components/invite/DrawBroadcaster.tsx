@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useTournament } from "@/store/tournament";
-import { getHostToken, hostDraw } from "@/lib/roomClient";
+import { fetchRoom, getHostToken, hostDraw } from "@/lib/roomClient";
+import { useRemoteIntent } from "@/lib/remoteIntent";
 import { buildDrawBroadcast } from "@/lib/drawBroadcast";
 
 /**
@@ -45,6 +46,33 @@ export function DrawBroadcaster() {
     // payload se deriva de sig.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, room?.id, isHost]);
+
+  // Mientras dura el sorteo, el host recibe las peticiones de los jugadores a los que les toca (girar, elegir, continuar).
+  const drawing = isHost && t?.phase === "draw";
+  const rid = room?.id;
+  useEffect(() => {
+    if (!drawing || !rid) {
+      useRemoteIntent.getState().setIntent(null);
+      return;
+    }
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      const r = await fetchRoom(rid);
+      if (stop) return;
+      if (r.ok && "intent" in r.data) {
+        const cur = useRemoteIntent.getState().intent;
+        const next = r.data.intent;
+        if ((cur?.at ?? 0) !== (next?.at ?? 0) || (cur === null) !== (next === null)) useRemoteIntent.getState().setIntent(next);
+      }
+      timer = setTimeout(() => void tick(), document.visibilityState === "hidden" ? 4000 : 1200);
+    };
+    void tick();
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [drawing, rid]);
 
   return null;
 }

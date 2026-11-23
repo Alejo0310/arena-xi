@@ -1,5 +1,5 @@
 import { handle, readJson } from "@/lib/server/http";
-import { RoomError, clearResult, join, remove, setDraw, setOpen, start, submitResult, syncHost } from "@/lib/server/rooms";
+import { RoomError, clearResult, join, remove, requestTurn, setDraw, setOpen, start, submitResult, syncHost } from "@/lib/server/rooms";
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +8,11 @@ export const dynamic = "force-dynamic";
  *   join   (público)        inscribirse con un nombre
  *   result (host/inscrito)  registrar o actualizar un resultado
  *   close, sync, remove, start, clear, draw  (solo host, con su token)
+ *   turn   (inscrito)       pedir girar / elegir / continuar cuando es su turno en el sorteo
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; action: string }> }) {
   const { id, action } = await ctx.params;
-  const limits: Record<string, number> = { join: 150, result: 600, close: 200, sync: 800, remove: 200, start: 60, clear: 200, draw: 3000 };
+  const limits: Record<string, number> = { join: 150, result: 600, close: 200, sync: 800, remove: 200, start: 60, turn: 600, clear: 200, draw: 3000 };
   if (!(action in limits)) return handle(req, "otra", 10, async () => { throw new RoomError("not-found", 404); });
   return handle(req, action, limits[action], async (s, { token }) => {
     const body = await readJson(req);
@@ -30,6 +31,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; ac
         return { version: await remove(s, id, token, body.name) };
       case "draw":
         return { version: await setDraw(s, id, token, body.draw ?? null) };
+      case "turn":
+        return { version: await requestTurn(s, id, token, body.kind, body.choice) };
       case "start":
         return { version: await start(s, id, token, body.tournament) };
       case "clear": {

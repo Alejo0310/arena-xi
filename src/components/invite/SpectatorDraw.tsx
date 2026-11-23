@@ -1,9 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Hourglass, PartyPopper, Radio } from "lucide-react";
+import { Hand, Hourglass, PartyPopper, Radio } from "lucide-react";
 import { PlayerDot } from "@/components/ui/bits";
 import { TeamCrest } from "@/components/ui/TeamCrest";
 import { Portal } from "@/components/ui/Portal";
@@ -15,6 +15,10 @@ import { fmtRating, getTeam } from "@/lib/teams";
 import { initialSpectator, spectatorEvent, spectatorSnapshot } from "@/lib/spectatorFlow";
 import { championCelebration } from "@/lib/fx";
 import type { DrawBroadcast } from "@/lib/roomTypes";
+import type { Choice } from "@/lib/draw";
+import { requestTurn } from "@/lib/roomClient";
+import { roomErrorText } from "@/lib/roomSync";
+import { toast } from "@/components/ui/feedback";
 
 // Mismas mecánicas visuales que el host; se cargan solo cuando se usan.
 const stageLoading = () => (
@@ -34,7 +38,7 @@ const noop = () => {};
  * El sorteo del host, visto desde la pantalla de un invitado: las mismas animaciones (ruleta, sobres, tómbola, draft
  * o bombos) y la misma revelación de cada equipo, sin controles. Cuando termina, avisa de que se espera al host.
  */
-export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
+export function SpectatorDraw({ draw, roomId, myName }: { draw: DrawBroadcast; roomId?: string; myName?: string }) {
   const [ready, setReady] = useState(false);
   const [sp, setSp] = useState(initialSpectator);
 
@@ -54,6 +58,25 @@ export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
     setSp((prev) => spectatorSnapshot(prev, draw));
   }, [draw]);
 
+  // Cuando le toca a este invitado, puede girar / elegir / continuar desde su propio dispositivo.
+  const [sent, setSent] = useState<string | null>(null);
+  const normName = (n?: string) => (n ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const turnPid = draw.pending?.participantId ?? draw.order[draw.cursor];
+  const myTurn = !!roomId && !!myName && draw.participants.some((p) => p.id === turnPid && normName(p.name) === normName(myName));
+  const send = useCallback(
+    async (kind: "spin" | "confirm", choice?: Choice) => {
+      if (!roomId) return;
+      const k = `${draw.id}:${draw.cursor}:${kind}`;
+      setSent(k);
+      const r = await requestTurn(roomId, kind, choice);
+      if (!r.ok) {
+        setSent(null);
+        if (r.error !== "conflict") toast.error(roomErrorText(r.error));
+      }
+    },
+    [roomId, draw.id, draw.cursor],
+  );
+
   const mode = DRAW_MODES.find((m) => m.id === draw.mode)!;
   const byId = new Map(draw.participants.map((p) => [p.id, p]));
   const completed = sp.flow.phase === "completed";
@@ -66,9 +89,10 @@ export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
     phase: sp.flow.phase,
     runId: sp.flow.runId,
     pick: draw.pending,
-    locked: true, // los invitados no controlan el sorteo
+    // Los invitados solo controlan el sorteo en SU turno.
+    locked: !(myTurn && sp.flow.phase === "ready" && !draw.pending && sent !== `${draw.id}:${draw.cursor}:spin`),
     actionLabel: mode.action,
-    onStart: noop,
+    onStart: (choice) => void send("spin", choice),
     onAnimationDone: (runId) => setSp((p) => spectatorEvent(p, { type: "ANIMATION_DONE", runId })),
   };
   const pickParticipant = draw.pending ? byId.get(draw.pending.participantId) : undefined;
@@ -102,6 +126,11 @@ export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
                   <span className="num mt-1 text-xs font-semibold uppercase tracking-widest text-mute">Participante {turnNumber} de {draw.order.length}</span>
                 </motion.div>
               )}
+              {myTurn && !draw.pending && (
+                <div className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-neon bg-neon/15 px-4 py-3 text-center font-display text-lg font-bold uppercase tracking-wider text-neon" role="status" data-testid="my-turn">
+                  <Hand className="size-5 shrink-0 animate-pulse" /> ¡Es tu turno! {mode.action}
+                </div>
+              )}
               <div className="flex justify-center overflow-hidden" data-testid="spectator-stage">
                 {draw.mode === "roulette" && <Roulette {...stageProps} />}
                 {draw.mode === "machine" && <Machine {...stageProps} />}
@@ -109,7 +138,7 @@ export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
                 {draw.mode === "draft" && <Draft {...stageProps} options={draw.draftOptions ?? []} />}
                 {draw.mode === "pots" && draw.pots && <Pots {...stageProps} pots={draw.pots} method={draw.potsMethod} potIndex={draw.potIndex ?? 0} canChangePot={false} onSelectPot={noop} />}
               </div>
-              <p className="mt-6 text-center text-xs text-mute">El organizador está haciendo el sorteo. Lo ves aquí en directo.</p>
+              <p className="mt-6 text-center text-xs text-mute">{roomId ? "Cuando te toque, el sorteo lo haces tú desde aquí." : "El organizador está haciendo el sorteo."} Lo ves en directo.</p>
             </>
           )}
         </div>
@@ -152,10 +181,11 @@ export function SpectatorDraw({ draw }: { draw: DrawBroadcast }) {
               stage={sp.flow.phase === "assigned" ? "assigned" : "revealing"}
               runId={sp.flow.runId}
               position={{ index: turnNumber, total: draw.order.length }}
-              continueLabel=""
+              continueLabel="Continuar"
               onRevealed={(runId) => setSp((p) => spectatorEvent(p, { type: "REVEAL_DONE", runId }))}
-              onContinue={noop}
+              onContinue={() => (myTurn && sent !== `${draw.id}:${draw.cursor}:confirm` ? void send("confirm") : undefined)}
               spectator
+              allowContinue={myTurn}
             />
           )}
         </AnimatePresence>

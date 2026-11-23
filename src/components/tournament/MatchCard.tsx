@@ -31,6 +31,8 @@ export interface MatchActions {
   manualWinner?: boolean;
   /** Marcar "en juego": solo local. */
   live?: boolean;
+  /** Si existe, solo se pueden registrar los partidos para los que devuelve true (cada jugador, los suyos). */
+  canRecord?: (m: Match) => boolean;
 }
 export const MatchActionsContext = createContext<MatchActions | null>(null);
 
@@ -81,7 +83,9 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
     );
   }
 
-  const inputsOpen = ready && !readOnly && (!done || editing);
+  const notYours = !!ctx?.canRecord && !ctx.canRecord(m);
+  const ro = readOnly || notYours;
+  const inputsOpen = ready && !ro && (!done || editing);
   const tiedNow = parse(hg) !== null && parse(hg) === parse(ag);
   const winner = matchWinner(m);
 
@@ -198,7 +202,10 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
         {side(away, "right", !!winner && winner === m.awayId)}
       </div>
 
-      {ready && !readOnly && (
+      {ready && notYours && !readOnly && !done && (
+        <p className="mt-3 border-t border-line pt-3 text-center text-xs text-mute" data-testid="match-not-yours">Solo sus jugadores o el organizador pueden registrar este resultado.</p>
+      )}
+      {ready && !ro && (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-line pt-3">
           {inputsOpen ? (
             <>

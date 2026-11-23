@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState, Loader, PlayerDot } from "@/components/ui/bits";
 import { TabBar, TournamentBody, type Tab } from "@/components/tournament/TournamentView";
 import { MatchActionsContext, type MatchActions } from "@/components/tournament/MatchCard";
-import { getHostToken, getMember, hostClear, submitResultRemote } from "@/lib/roomClient";
+import { getHostToken, getMember, hasRole, hostClear, submitResultRemote } from "@/lib/roomClient";
 import { roomErrorText } from "@/lib/roomSync";
 import { useRoomPoll } from "@/lib/useRoomPoll";
 import { ID_RE } from "@/lib/roomIds";
 import { setActiveSnapshot } from "@/lib/teams";
 import { SpectatorDraw } from "@/components/invite/SpectatorDraw";
 import type { RoomPublic } from "@/lib/roomTypes";
-import type { Tournament } from "@/lib/types";
+import type { Match, Tournament } from "@/lib/types";
 
 /** Vista en vivo de un torneo con invitaciones: sala de espera antes de empezar y, después, partidos y resultados. */
 export default function RoomPage() {
@@ -61,6 +61,15 @@ export default function RoomPage() {
     return {
       manualWinner: role === "host",
       live: false,
+      // Un jugador solo registra SUS partidos; el organizador, cualquiera.
+      ...(role === "member"
+        ? {
+            canRecord: (m: Match) => {
+              const me = tournament?.participants.find((p) => p.name.trim().replace(/\s+/g, " ").toLowerCase() === (name ?? "").trim().replace(/\s+/g, " ").toLowerCase());
+              return !!me && (m.homeId === me.id || m.awayId === me.id);
+            },
+          }
+        : {}),
       record: async (matchId, input) => {
         const r = await submitResultRemote(id, matchId, input);
         if (r.ok) {
@@ -82,7 +91,7 @@ export default function RoomPage() {
           }
         : {}),
     };
-  }, [role, id]);
+  }, [role, id, name, tournament]);
 
   if (!valid || room === null) {
     return <EmptyState icon={<Eye className="size-8" />} title="Torneo no encontrado" body="El enlace no es válido o el torneo ya no está disponible." action={<Link href="/unirse"><Button>Unirme con un código</Button></Link>} />;
@@ -109,7 +118,7 @@ export default function RoomPage() {
       </div>
 
       {room.draw && !room.started ? (
-        <SpectatorDraw draw={room.draw} />
+        <SpectatorDraw draw={room.draw} roomId={id} myName={hasRole(id) === "member" ? getMember(id)?.name : undefined} />
       ) : !room.started || !tournament ? (
         <div className="glass p-6" data-testid="room-lobby">
           <h2 className="display text-3xl font-extrabold">{room.open ? "Esperando a que el organizador inicie el torneo" : "El organizador está preparando el sorteo"}</h2>

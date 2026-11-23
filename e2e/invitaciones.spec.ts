@@ -208,7 +208,11 @@ test.describe("invitaciones: permisos y resultados", () => {
     await expect(p1.getByTestId("room-title")).toBeVisible();
     await p1.getByRole("tab", { name: /Calendario/ }).click();
     await expect(p1.getByText("Próximos enfrentamientos")).toHaveCount(0); // termina la transición de pestaña
-    const firstCard = p1.locator(".glass", { has: p1.getByRole("button", { name: /Registrar/ }) }).first();
+    // Un jugador solo puede registrar SUS partidos: en los ajenos no hay botón de registrar.
+    const mineCards = (g: Page, who: string) => g.locator(".glass", { has: g.getByRole("button", { name: /Registrar/ }) }).filter({ hasText: who });
+    await expect(mineCards(p1, "Ana Invitada").first()).toBeVisible();
+    await expect(mineCards(p1, "Beto Invitado").filter({ hasNotText: "Ana Invitada" })).toHaveCount(0);
+    const firstCard = mineCards(p1, "Ana Invitada").first();
     const inputs = firstCard.locator("input.score-input");
     await inputs.nth(0).fill("3");
     await inputs.nth(1).fill("1");
@@ -226,7 +230,7 @@ test.describe("invitaciones: permisos y resultados", () => {
     await p2.goto(`/sala/${roomId}`);
     await p2.getByRole("tab", { name: /Calendario/ }).click();
     await expect(p2.getByText("Próximos enfrentamientos")).toHaveCount(0);
-    const card2 = p2.locator(".glass", { has: p2.getByRole("button", { name: /Registrar/ }) }).first();
+    const card2 = mineCards(p2, "Beto Invitado").first();
     await card2.locator("input.score-input").nth(0).fill("0");
     await card2.locator("input.score-input").nth(1).fill("2");
     await card2.getByRole("button", { name: /Registrar/ }).click();
@@ -250,6 +254,11 @@ test.describe("invitaciones: permisos y resultados", () => {
     expect((await request.post(`/api/sala/${roomId}/clear`, { headers: { Authorization: `Bearer ${memberToken}` }, data: { matchId } })).status()).toBe(403);
     expect((await request.post(`/api/sala/${roomId}/result`, { headers: { Authorization: `Bearer ${memberToken}` }, data: { matchId, result: { homeGoals: 1, awayGoals: 1, manualWinnerId: "p0" } } })).status()).toBe(403);
     expect((await request.post(`/api/sala/${roomId}/result`, { data: { matchId, result: { homeGoals: 9, awayGoals: 0 } } })).status()).toBe(401);
+    // Ni con la API un invitado registra un partido en el que no juega.
+    const all = (await (await request.get(`/api/sala/${roomId}`)).json()).tournament as { matches: { id: string; homeId: string | null; awayId: string | null }[]; participants: { id: string; name: string }[] };
+    const ana = all.participants.find((p) => p.name === "Ana Invitada")!.id;
+    const foreign = all.matches.find((m) => m.homeId && m.awayId && m.homeId !== ana && m.awayId !== ana)!;
+    expect((await request.post(`/api/sala/${roomId}/result`, { headers: { Authorization: `Bearer ${memberToken}` }, data: { matchId: foreign.id, result: { homeGoals: 1, awayGoals: 0 } } })).status()).toBe(403);
     for (const c of [g1, g2, g5]) await c.close();
   });
 
@@ -294,11 +303,20 @@ test.describe("invitaciones: sorteo en directo", () => {
 
     // Los invitados ven el mismo turno y la misma ruleta, sin controles.
     const turn = (await page.getByTestId("turn-name").textContent())!.trim();
-    for (const g of [p1, p2]) {
+    const guests: [Page, string][] = [[p1, "Ana Invitada"], [p2, "Beto Invitado"]];
+    for (const [g, who] of guests) {
       await expect(g.getByTestId("spectator-draw")).toHaveAttribute("data-draw-mode", "roulette", { timeout: 15_000 });
       await expect(g.getByTestId("spectator-turn-name")).toHaveText(turn);
       await expect(g.getByTestId("spectator-stage")).toBeVisible();
-      await expect(g.getByTestId("draw-action")).toBeDisabled(); // sin controles para los invitados
+      // Sin controles para los invitados, salvo el dueño del turno.
+      if (who === turn) await expect(g.getByTestId("draw-action")).toBeEnabled({ timeout: 10_000 });
+      else await expect(g.getByTestId("draw-action")).toBeDisabled();
+    }
+    if (turn !== "Host Uno") {
+      // El host espera al jugador y, como alternativa, puede decidir por él.
+      await expect(page.getByTestId("host-waiting-player")).toContainText(turn);
+      await expect(page.getByTestId("draw-action")).toBeDisabled();
+      await page.getByTestId("host-takeover").click();
     }
 
     if (process.env.E2E_SHOTS) await p1.screenshot({ path: `${process.env.E2E_SHOTS}/guest-stage-${test.info().project.name}.png`, fullPage: true });
@@ -308,11 +326,12 @@ test.describe("invitaciones: sorteo en directo", () => {
     await expect(hostDialog).toBeVisible({ timeout: 20_000 });
     const team = (await hostDialog.getByTestId("reveal-team").textContent())!.trim();
     await expect(hostDialog.getByRole("button", { name: "Continuar" })).toBeVisible({ timeout: 10_000 });
-    for (const g of [p1, p2]) {
+    for (const [g, who] of guests) {
       const d = g.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
       await expect(d).toBeVisible({ timeout: 20_000 });
       await expect(d.getByTestId("reveal-team")).toHaveText(team);
-      await expect(d.getByRole("button", { name: "Continuar" })).toHaveCount(0); // solo el host continúa
+      // Solo continúan el host y el dueño del turno.
+      if (who !== turn) await expect(d.getByRole("button", { name: "Continuar" })).toHaveCount(0);
     }
     // Sin desbordes horizontales en el móvil durante la revelación y con la lista visible.
     const hostOrder = page.locator("ol[aria-label='Orden del sorteo'] li");
@@ -343,6 +362,75 @@ test.describe("invitaciones: sorteo en directo", () => {
       await expect(g.getByTestId("spectator-draw")).toHaveCount(0, { timeout: 20_000 });
       await expect(g.getByRole("tab", { name: /Calendario/ })).toBeVisible({ timeout: 20_000 });
     }
+    for (const c of [g1, g2]) await c.close();
+  });
+
+  test("el jugador al que le toca gira y continúa desde su móvil; el host no tiene que tocar nada", async ({ page, browser, request: rawRequest }) => {
+    const request = retrying(rawRequest);
+    test.setTimeout(240_000);
+    const { code, url } = await hostCreatesInvitation(page, ["Host Uno"]);
+    const g1 = await guestContext(browser);
+    const p1 = await joinWith(g1, url, "Ana Invitada");
+    await expect(p1.getByTestId("join-success")).toBeVisible();
+    const g2 = await guestContext(browser);
+    const p2 = await joinWith(g2, url, "Beto Invitado");
+    await expect(p2.getByTestId("join-success")).toBeVisible();
+    await expect(page.getByTestId("invite-count")).toHaveText("3", { timeout: 15_000 });
+    const roomId = (await (await request.get(`/api/sala/codigo/${code}`)).json()).id as string;
+    await p1.goto(`/sala/${roomId}`);
+    await p2.goto(`/sala/${roomId}`);
+    await clickCentered(page.getByRole("button", { name: /Ir al sorteo/ }));
+    await expect(page).toHaveURL(/\/sorteo/);
+    await chooseMode(page, "Ruleta");
+
+    const guests: Record<string, Page> = { "Ana Invitada": p1, "Beto Invitado": p2 };
+    const memberToken = await p1.evaluate((id) => JSON.parse(localStorage.getItem("arena-xi-member")!)[id].token as string, roomId);
+    let guestTurns = 0;
+    for (let i = 1; i <= 3; i++) {
+      const turn = (await page.getByTestId("turn-name").textContent())!.trim();
+      const g = guests[turn];
+      if (!g) {
+        // Turno del host: lo juega como siempre.
+        await startTurn(page, "Ruleta");
+        const d = page.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
+        await expect(d.getByRole("button", { name: "Continuar" })).toBeVisible({ timeout: 25_000 });
+        await d.getByRole("button", { name: "Continuar" }).click();
+        await expect(d).toBeHidden();
+        continue;
+      }
+      guestTurns++;
+      // Los demás ven el turno pero no tienen controles; el dueño sí, con un aviso claro.
+      await expect(g.getByTestId("my-turn")).toBeVisible({ timeout: 15_000 });
+      await expect(g.getByTestId("draw-action")).toBeEnabled();
+      for (const other of Object.values(guests)) if (other !== g) await expect(other.getByTestId("my-turn")).toHaveCount(0);
+      await expect(page.getByTestId("host-waiting-player")).toContainText(turn, { timeout: 15_000 });
+      await expect(page.getByTestId("draw-action")).toBeDisabled();
+      // Otro invitado no puede pedir el turno de alguien ni con la API.
+      const other = Object.entries(guests).find(([n]) => n !== turn)![1];
+      const otherToken = await other.evaluate((id) => JSON.parse(localStorage.getItem("arena-xi-member")!)[id].token as string, roomId);
+      expect((await request.post(`/api/sala/${roomId}/turn`, { headers: { Authorization: `Bearer ${otherToken}` }, data: { kind: "spin" } })).status()).toBe(403);
+      void memberToken;
+
+      // El jugador gira desde su dispositivo: el host ejecuta el sorteo sin que nadie lo toque y todos ven el mismo equipo.
+      await clickCentered(g.getByTestId("draw-action"));
+      const dlg = g.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
+      await expect(dlg).toBeVisible({ timeout: 30_000 });
+      const team = (await dlg.getByTestId("reveal-team").textContent())!.trim();
+      const hostDlg = page.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
+      await expect(hostDlg.getByTestId("reveal-team")).toHaveText(team, { timeout: 20_000 });
+      const cont = dlg.getByRole("button", { name: "Continuar" });
+      await expect(cont).toBeVisible({ timeout: 15_000 });
+      await clickCentered(cont);
+      // Al continuar él, el sorteo avanza en el host sin tocar nada.
+      await expect(hostDlg).toBeHidden({ timeout: 20_000 });
+      await expect(g.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
+      const over = await g.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(over).toBeLessThanOrEqual(1);
+      await expect(page.locator("ol[aria-label='Orden del sorteo'] li[data-assigned='true']")).toHaveCount(i, { timeout: 15_000 });
+    }
+    expect(guestTurns).toBeGreaterThanOrEqual(2); // con 3 participantes y 2 invitados, siempre juegan al menos 2 turnos
+    await expect(page.getByTestId("draw-complete")).toBeVisible({ timeout: 15_000 });
+    for (const g of Object.values(guests)) await expect(g.getByTestId("spectator-waiting")).toBeVisible({ timeout: 20_000 });
     for (const c of [g1, g2]) await c.close();
   });
 });

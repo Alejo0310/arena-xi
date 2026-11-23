@@ -81,4 +81,11 @@ export function submitResultRemote(id: string, matchId: string, result: ResultIn
   return call<{ version: number; tournament: Tournament }>("POST", `/api/sala/${id}/result`, { matchId, result }, token);
 }
 
+/** El jugador al que le toca pide girar / elegir / continuar desde su dispositivo. */
+export function requestTurn(id: string, kind: "spin" | "confirm", choice?: { envelopeIndex?: number; teamId?: string }) {
+  const token = getMember(id)?.token ?? null;
+  if (!token) return Promise.resolve({ ok: false, error: "unauthorized", status: 401 } as ApiResult<{ version: number }>);
+  return call<{ version: number }>("POST", `/api/sala/${id}/turn`, { kind, choice }, token);
+}
+
 export const hasRole = (id: string): "host" | "member" | null => (getHostToken(id) ? "host" : getMember(id) ? "member" : null);

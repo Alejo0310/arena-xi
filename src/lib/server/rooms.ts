@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { Tournament } from "../types";
-import type { DrawBroadcast, RoomErrorCode, RoomMeta, RoomPublic } from "../roomTypes";
+import type { DrawBroadcast, DrawIntent, RoomErrorCode, RoomMeta, RoomPublic } from "../roomTypes";
 import { tournamentCategoryError } from "../category";
 import { recordResult as engineRecord, resetResult as engineReset } from "../tournament/engine";
 import type { ResultInput } from "../tournament/match";
@@ -21,6 +21,7 @@ import { ID_RE, CODE_RE } from "../roomIds";
  *   room:{id}:started             → bandera que cierra el registro de forma permanente
  *   room:{id}:tournament / :ver   → torneo iniciado (JSON) y su versión
  *   room:{id}:draw                → estado del sorteo en curso (para que los invitados lo vean en directo)
+ *   room:{id}:intent              → petición del jugador al que le toca (girar, elegir sobre/carta, continuar)
  *   room:{id}:lock                → cerrojo corto para actualizar resultados sin pisarse
  */
 
@@ -48,6 +49,7 @@ const key = {
   started: (id: string) => `room:${id}:started`,
   tour: (id: string) => `room:${id}:tournament`,
   draw: (id: string) => `room:${id}:draw`,
+  intent: (id: string) => `room:${id}:intent`,
   ver: (id: string) => `room:${id}:ver`,
   lock: (id: string) => `room:${id}:lock`,
 };
@@ -96,16 +98,17 @@ async function requireHost(s: Store, id: string, token: unknown): Promise<void> 
 }
 
 /** Identifica a quien registra resultados: host o participante inscrito (token propio). */
-async function whoIs(s: Store, id: string, token: unknown): Promise<"host" | "member"> {
+async function whoIs(s: Store, id: string, token: unknown): Promise<{ role: "host" | "member"; name?: string }> {
   if (typeof token !== "string" || token.length < 32) return fail("unauthorized", 401);
   const h = sha(token);
   const stored = await s.get(key.host(id));
   if (stored) {
     const a = Buffer.from(h, "hex");
     const b = Buffer.from(stored, "hex");
-    if (a.length === b.length && timingSafeEqual(a, b)) return "host";
+    if (a.length === b.length && timingSafeEqual(a, b)) return { role: "host" };
   }
-  if (await s.hget(key.members(id), h)) return "member";
+  const name = await s.hget(key.members(id), h);
+  if (name) return { role: "member", name };
   return fail("unauthorized", 401);
 }
 
@@ -157,10 +160,12 @@ export async function publicState(s: Store, id: string, since?: number): Promise
   const participants = Object.values(all).map((v) => (JSON.parse(v) as { name: string }).name);
   const raw = meta.started ? await s.get(key.tour(id)) : null;
   const drawRaw = meta.started ? null : await s.get(key.draw(id));
+  const intentRaw = meta.started ? null : await s.get(key.intent(id));
   return {
     id, name: meta.name, host: meta.host, max: meta.max, open: meta.open, started: meta.started, version, participants,
     tournament: raw ? (JSON.parse(raw) as Tournament) : null,
     draw: drawRaw ? (JSON.parse(drawRaw) as DrawBroadcast) : null,
+    intent: intentRaw ? (JSON.parse(intentRaw) as DrawIntent) : null,
   };
 }
 
@@ -295,7 +300,7 @@ export async function start(s: Store, id: string, token: unknown, tournament: un
     const roomNames = Object.keys(await s.hgetall(key.parts(id)));
     const t = sanitizeTournament(tournament, roomNames);
     await s.set(key.tour(id), JSON.stringify(t), { ex: TTL });
-    await s.del(key.draw(id)); // el sorteo termina: ya no hay nada que ver en directo
+    await s.del(key.draw(id), key.intent(id)); // el sorteo termina: ya no hay nada que ver en directo
     await writeMeta(s, id, { ...meta, started: true, open: false });
   } catch (e) {
     await s.del(key.started(id));
@@ -376,8 +381,19 @@ export async function setDraw(s: Store, id: string, token: unknown, draw: unknow
   await requireHost(s, id, token);
   const meta = await readMeta(s, id);
   if (meta.started) return fail("started", 409);
-  if (draw === null) await s.del(key.draw(id));
-  else await s.set(key.draw(id), JSON.stringify(sanitizeDraw(draw)), { ex: TTL });
+  if (draw === null) {
+    await s.del(key.draw(id), key.intent(id));
+  } else {
+    const clean = sanitizeDraw(draw);
+    await s.set(key.draw(id), JSON.stringify(clean), { ex: TTL });
+    // La petición del jugador ya se ejecutó (hay un giro pendiente o el turno avanzó) o es de otro sorteo: se descarta.
+    const raw = await s.get(key.intent(id));
+    if (raw) {
+      const it = JSON.parse(raw) as DrawIntent;
+      const done = it.drawId !== clean.id || it.cursor !== clean.cursor || (it.kind === "spin" ? !!clean.pending : !clean.pending);
+      if (done) await s.del(key.intent(id));
+    }
+  }
   return bump(s, id);
 }
 
@@ -430,14 +446,54 @@ async function mutateTournament(s: Store, id: string, apply: (t: Tournament) => 
   });
 }
 
+/**
+ * El jugador al que le toca (en el sorteo) pide girar / abrir un sobre / elegir carta, o continuar tras ver su equipo.
+ * Solo se guarda la petición: la ejecuta el navegador del host, que sigue siendo quien decide el azar.
+ */
+export async function requestTurn(s: Store, id: string, token: unknown, rawKind: unknown, rawChoice?: unknown): Promise<number> {
+  const who = await whoIs(s, id, token);
+  if (who.role !== "member") return fail("forbidden", 403);
+  const meta = await readMeta(s, id);
+  if (meta.started) return fail("started", 409);
+  if (rawKind !== "spin" && rawKind !== "confirm") return fail("invalid");
+  const raw = await s.get(key.draw(id));
+  if (!raw) return fail("conflict", 409);
+  const draw = JSON.parse(raw) as DrawBroadcast;
+  const turnId = draw.pending?.participantId ?? draw.order[draw.cursor];
+  const me = draw.participants.find((p) => norm(p.name.trim().replace(/\s+/g, " ")) === who.name);
+  if (!me || me.id !== turnId) return fail("forbidden", 403);
+  if (rawKind === "spin" ? !!draw.pending : !draw.pending) return fail("conflict", 409);
+  const c = (rawChoice ?? {}) as { envelopeIndex?: unknown; teamId?: unknown };
+  const choice: DrawIntent["choice"] = {};
+  if (Number.isInteger(c.envelopeIndex) && (c.envelopeIndex as number) >= 0 && (c.envelopeIndex as number) < 1000) choice.envelopeIndex = c.envelopeIndex as number;
+  if (typeof c.teamId === "string" && c.teamId.length <= 80) choice.teamId = c.teamId;
+  const prev = await s.get(key.intent(id));
+  if (prev) {
+    const p = JSON.parse(prev) as DrawIntent;
+    if (p.drawId === draw.id && p.cursor === draw.cursor && p.kind === rawKind) return (await s.get(key.ver(id)).then((v) => Number(v))) || 0; // idempotente
+  }
+  const intent: DrawIntent = { kind: rawKind, drawId: draw.id, cursor: draw.cursor, participantId: me.id, choice, at: Date.now() };
+  await s.set(key.intent(id), JSON.stringify(intent), { ex: TTL });
+  return bump(s, id);
+}
+
 /** Registra (o actualiza) el resultado de un partido. Pueden hacerlo el host y los inscritos, una vez iniciado el torneo. */
 export async function submitResult(s: Store, id: string, token: unknown, matchId: unknown, rawResult: unknown) {
-  const role = await whoIs(s, id, token);
+  const who = await whoIs(s, id, token);
   const meta = await readMeta(s, id);
   if (!meta.started) return fail("conflict", 409);
   if (typeof matchId !== "string") return fail("invalid");
-  const input = sanitizeResult(rawResult, role === "host");
-  return mutateTournament(s, id, (t) => engineRecord(t, matchId, input));
+  const input = sanitizeResult(rawResult, who.role === "host");
+  return mutateTournament(s, id, (t) => {
+    // Un jugador solo registra los resultados de SUS partidos; el organizador puede registrar cualquiera.
+    if (who.role === "member") {
+      const me = t.participants.find((p) => norm(p.name.trim().replace(/\s+/g, " ")) === who.name);
+      const m = t.matches.find((x) => x.id === matchId);
+      if (!me || !m) return { error: "Partido no encontrado." };
+      if (m.homeId !== me.id && m.awayId !== me.id) throw new RoomError("forbidden", 403);
+    }
+    return engineRecord(t, matchId, input);
+  });
 }
 
 /** Borrar un resultado cambia el estado de la competición: solo el host. */

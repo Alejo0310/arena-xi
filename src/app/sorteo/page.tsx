@@ -3,9 +3,9 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Disc3, Mail, Dices, Layers, LayoutGrid, Zap, RotateCcw, Play, Clapperboard, History, ArrowLeft, Lock, PartyPopper, Shield, Globe2 } from "lucide-react";
+import { Disc3, Mail, Dices, Layers, LayoutGrid, Zap, RotateCcw, Play, Clapperboard, History, ArrowLeft, Hourglass, Lock, PartyPopper, Shield, Globe2 } from "lucide-react";
 import { useTournament } from "@/store/tournament";
 import { DRAW_MODES } from "@/lib/draw";
 import { CATEGORY_LABEL } from "@/lib/category";
@@ -22,6 +22,7 @@ import { useDrawController } from "@/components/draw/useDrawController";
 import type { StageProps } from "@/components/draw/types";
 import { championCelebration } from "@/lib/fx";
 import { play } from "@/lib/sound";
+import { isRemotePlayer, useRemoteIntent } from "@/lib/remoteIntent";
 
 // Cada mecánica se carga solo cuando se usa.
 const stageLoading = () => <div className="grid h-[420px] place-items-center"><div className="size-10 animate-spin rounded-full border-2 border-neon/20 border-t-neon" /></div>;
@@ -111,13 +112,30 @@ function DrawStage({ t }: { t: Tournament }) {
   const ctl = useDrawController(d);
   const { flow, pick } = ctl;
   const [presentation, setPresentation] = useState<RevealItem[] | null>(null);
+  const intent = useRemoteIntent((s) => s.intent);
+  const [takeover, setTakeover] = useState<string | null>(null); // "drawId:cursor" en el que el host decide por el jugador
 
   const byId = useMemo(() => new Map(t.participants.map((p) => [p.id, p])), [t.participants]);
   const turn = ctl.turnId ? byId.get(ctl.turnId) : undefined;
   const modeInfo = DRAW_MODES.find((m) => m.id === d.mode)!;
   const completed = flow.phase === "completed";
   const turnNumber = Math.min(d.cursor + 1, d.order.length);
+  const remoteTurn = !!t.room && isRemotePlayer(t.room.guests, turn?.name) && takeover !== `${d.id}:${d.cursor}`;
   const canEditDraw = flow.phase === "ready" || flow.phase === "completed" || flow.phase === "assigned";
+
+  // Ejecuta la petición del jugador al que le toca. El azar sigue decidiéndose aquí, en el navegador del host.
+  const handled = useRef(0);
+  useEffect(() => {
+    if (!intent || intent.drawId !== d.id || intent.cursor !== d.cursor || handled.current === intent.at) return;
+    if (intent.participantId !== ctl.turnId) return;
+    if (intent.kind === "spin" && flow.phase === "ready" && !d.pending) {
+      handled.current = intent.at;
+      ctl.start(intent.choice);
+    } else if (intent.kind === "confirm" && flow.phase === "assigned") {
+      handled.current = intent.at;
+      ctl.confirm();
+    }
+  }, [intent, d.id, d.cursor, d.pending, flow.phase, ctl]);
 
   const fullDraw = async () => {
     const ok = await confirmDialog({
@@ -166,7 +184,7 @@ function DrawStage({ t }: { t: Tournament }) {
     phase: flow.phase,
     runId: flow.runId,
     pick,
-    locked: ctl.locked,
+    locked: ctl.locked || remoteTurn,
     actionLabel: modeInfo.action,
     onStart: ctl.start,
     onAnimationDone: ctl.animationDone,
@@ -189,12 +207,18 @@ function DrawStage({ t }: { t: Tournament }) {
           ) : (
             <>
               {turn && <TurnBanner key={turn.id} name={turn.name} color={turn.color} index={turnNumber} total={d.order.length} onShown={flow.phase === "next" ? ctl.nextReady : undefined} />}
+              {remoteTurn && turn && flow.phase === "ready" && (
+                <div className="mb-4 flex flex-col items-center gap-2 text-center" role="status" data-testid="host-waiting-player">
+                  <span className="flex items-center gap-2 rounded-full border border-neon/40 bg-neon/10 px-4 py-2 text-sm font-semibold"><Hourglass className="size-4 animate-pulse text-neon" /> Esperando a que {turn.name} elija desde su dispositivo…</span>
+                  <Button variant="ghost" size="sm" data-testid="host-takeover" onClick={() => setTakeover(`${d.id}:${d.cursor}`)}>Hacerlo yo por {turn.name}</Button>
+                </div>
+              )}
               <div className="flex justify-center">
                 {d.mode === "roulette" && <Roulette {...stageProps} />}
                 {d.mode === "machine" && <Machine {...stageProps} />}
                 {d.mode === "envelopes" && d.envelopes && <Envelopes {...stageProps} envelopes={d.envelopes} owners={envelopeOwners} participants={t.participants} />}
                 {d.mode === "draft" && <Draft {...stageProps} options={d.draftOptions ?? []} />}
-                {d.mode === "pots" && d.pots && <Pots {...stageProps} pots={d.pots} method={d.potsMethod} potIndex={d.potIndex ?? 0} canChangePot={d.cursor === 0 && !d.pending && !ctl.locked} onSelectPot={selectPot} />}
+                {d.mode === "pots" && d.pots && <Pots {...stageProps} pots={d.pots} method={d.potsMethod} potIndex={d.potIndex ?? 0} canChangePot={d.cursor === 0 && !d.pending && !ctl.locked && !remoteTurn} onSelectPot={selectPot} />}
               </div>
               <div className="mt-8 flex justify-center border-t border-line pt-5">
                 <Button variant="secondary" onClick={fullDraw} disabled={ctl.locked || !!d.pending}>

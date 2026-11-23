@@ -42,6 +42,20 @@ export interface DrawBroadcast {
   gender: Gender;
 }
 
+/**
+ * Petición de un jugador desde su móvil durante el sorteo. El resultado lo sigue decidiendo el navegador del host
+ * (como siempre); el servidor solo comprueba que sea el turno de ese jugador y guarda la petición hasta que el host la ejecuta.
+ */
+export interface DrawIntent {
+  kind: "spin" | "confirm";
+  drawId: string;
+  cursor: number;
+  participantId: string;
+  /** Elección del jugador (sobre abierto o carta del draft). */
+  choice?: { envelopeIndex?: number; teamId?: string };
+  at: number;
+}
+
 export interface RoomPublic {
   id: string;
   name: string;
@@ -55,6 +69,8 @@ export interface RoomPublic {
   tournament: Tournament | null;
   /** Sorteo en curso (antes de que el host inicie el torneo). */
   draw: DrawBroadcast | null;
+  /** Petición pendiente del jugador al que le toca (antes de iniciar el torneo). */
+  intent: DrawIntent | null;
 }
 
 export type RoomErrorCode =

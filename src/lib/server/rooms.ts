@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { Tournament } from "../types";
-import type { RoomErrorCode, RoomMeta, RoomPublic } from "../roomTypes";
+import type { DrawBroadcast, RoomErrorCode, RoomMeta, RoomPublic } from "../roomTypes";
 import { tournamentCategoryError } from "../category";
 import { recordResult as engineRecord, resetResult as engineReset } from "../tournament/engine";
 import type { ResultInput } from "../tournament/match";
@@ -20,6 +20,7 @@ import { ID_RE, CODE_RE } from "../roomIds";
  *   room:{id}:count               → contador atómico de plazas ocupadas (control del cupo)
  *   room:{id}:started             → bandera que cierra el registro de forma permanente
  *   room:{id}:tournament / :ver   → torneo iniciado (JSON) y su versión
+ *   room:{id}:draw                → estado del sorteo en curso (para que los invitados lo vean en directo)
  *   room:{id}:lock                → cerrojo corto para actualizar resultados sin pisarse
  */
 
@@ -46,6 +47,7 @@ const key = {
   count: (id: string) => `room:${id}:count`,
   started: (id: string) => `room:${id}:started`,
   tour: (id: string) => `room:${id}:tournament`,
+  draw: (id: string) => `room:${id}:draw`,
   ver: (id: string) => `room:${id}:ver`,
   lock: (id: string) => `room:${id}:lock`,
 };
@@ -154,7 +156,12 @@ export async function publicState(s: Store, id: string, since?: number): Promise
   const all = await s.hgetall(key.parts(id));
   const participants = Object.values(all).map((v) => (JSON.parse(v) as { name: string }).name);
   const raw = meta.started ? await s.get(key.tour(id)) : null;
-  return { id, name: meta.name, host: meta.host, max: meta.max, open: meta.open, started: meta.started, version, participants, tournament: raw ? (JSON.parse(raw) as Tournament) : null };
+  const drawRaw = meta.started ? null : await s.get(key.draw(id));
+  return {
+    id, name: meta.name, host: meta.host, max: meta.max, open: meta.open, started: meta.started, version, participants,
+    tournament: raw ? (JSON.parse(raw) as Tournament) : null,
+    draw: drawRaw ? (JSON.parse(drawRaw) as DrawBroadcast) : null,
+  };
 }
 
 /** Un invitado se inscribe. Atómico respecto al cupo y a los nombres duplicados. */
@@ -288,12 +295,89 @@ export async function start(s: Store, id: string, token: unknown, tournament: un
     const roomNames = Object.keys(await s.hgetall(key.parts(id)));
     const t = sanitizeTournament(tournament, roomNames);
     await s.set(key.tour(id), JSON.stringify(t), { ex: TTL });
+    await s.del(key.draw(id)); // el sorteo termina: ya no hay nada que ver en directo
     await writeMeta(s, id, { ...meta, started: true, open: false });
   } catch (e) {
     await s.del(key.started(id));
     throw e;
   }
   await touch(s, id);
+  return bump(s, id);
+}
+
+// ------------------------------------------------------------------------------------------------
+
+const MODES = ["roulette", "envelopes", "machine", "draft", "pots"] as const;
+const EDITIONS = ["FC25", "FC26", "FC27"] as const;
+const MAX_DRAW_BYTES = 90_000;
+
+const isStr = (v: unknown, max = 80): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
+function strArr(v: unknown, max: number): string[] {
+  if (!Array.isArray(v) || v.length > max || !v.every((x) => isStr(x))) return fail("invalid");
+  return v as string[];
+}
+const int = (v: unknown, min = 0, max = 100_000): number => (typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : (fail("invalid") as never));
+
+/** Valida y reconstruye el estado del sorteo que publica el host (solo campos conocidos, tamaños acotados). */
+export function sanitizeDraw(raw: unknown): DrawBroadcast {
+  if (!raw || typeof raw !== "object" || JSON.stringify(raw).length > MAX_DRAW_BYTES) return fail("invalid");
+  const d = raw as Record<string, unknown>;
+  if (!isStr(d.id, 40) || !(MODES as readonly unknown[]).includes(d.mode) || !(EDITIONS as readonly unknown[]).includes(d.edition)) return fail("invalid");
+  if (d.category !== "club" && d.category !== "national") return fail("invalid");
+  if (d.gender !== "men" && d.gender !== "women") return fail("invalid");
+  const order = strArr(d.order, MAX_PARTICIPANTS);
+  const participants = Array.isArray(d.participants) && d.participants.length <= MAX_PARTICIPANTS
+    ? d.participants.map((p) => {
+        const o = p as Record<string, unknown>;
+        if (!p || !isStr(o.id, 40) || !isStr(o.name, MAX_NAME) || !isStr(o.color, 20)) return fail("invalid");
+        return { id: o.id as string, name: (o.name as string).replace(/[<>]/g, ""), color: o.color as string };
+      })
+    : fail("invalid");
+  const assignments: Record<string, string> = {};
+  if (!d.assignments || typeof d.assignments !== "object") return fail("invalid");
+  for (const [k, v] of Object.entries(d.assignments as Record<string, unknown>)) {
+    if (!isStr(k, 40) || !isStr(v)) return fail("invalid");
+    assignments[k] = v;
+  }
+  const owners: Record<number, string> = {};
+  for (const [k, v] of Object.entries((d.owners ?? {}) as Record<string, unknown>)) {
+    if (!/^\d{1,3}$/.test(k) || !isStr(v, 40)) return fail("invalid");
+    owners[Number(k)] = v;
+  }
+  let pending: DrawBroadcast["pending"] = null;
+  if (d.pending) {
+    const p = d.pending as Record<string, unknown>;
+    if (!isStr(p.participantId, 40) || !isStr(p.teamId) || typeof p.at !== "number") return fail("invalid");
+    pending = { participantId: p.participantId as string, teamId: p.teamId as string, at: p.at as number, ...(typeof p.envelopeIndex === "number" ? { envelopeIndex: int(p.envelopeIndex, 0, 200) } : {}) };
+  }
+  return {
+    id: d.id as string,
+    mode: d.mode as DrawBroadcast["mode"],
+    order,
+    cursor: int(d.cursor, 0, MAX_PARTICIPANTS),
+    pool: strArr(d.pool, 800),
+    pending,
+    ...(Array.isArray(d.envelopes) ? { envelopes: (d.envelopes as unknown[]).slice(0, 80).map((e) => (e === null ? null : isStr(e) ? e : (fail("invalid") as never))) } : {}),
+    ...(Array.isArray(d.draftOptions) ? { draftOptions: strArr(d.draftOptions, 10) } : {}),
+    ...(Array.isArray(d.pots) ? { pots: (d.pots as unknown[]).slice(0, 80).map((p) => strArr(p, 800)) } : {}),
+    ...(typeof d.potIndex === "number" ? { potIndex: int(d.potIndex, 0, 80) } : {}),
+    ...(d.potsMethod === "rating" || d.potsMethod === "manual" || d.potsMethod === "balanced" ? { potsMethod: d.potsMethod } : {}),
+    assignments,
+    owners,
+    participants,
+    edition: d.edition as DrawBroadcast["edition"],
+    category: d.category,
+    gender: d.gender,
+  };
+}
+
+/** El host publica (o borra, con null) el estado del sorteo en curso. Solo antes de iniciar el torneo. */
+export async function setDraw(s: Store, id: string, token: unknown, draw: unknown): Promise<number> {
+  await requireHost(s, id, token);
+  const meta = await readMeta(s, id);
+  if (meta.started) return fail("started", 409);
+  if (draw === null) await s.del(key.draw(id));
+  else await s.set(key.draw(id), JSON.stringify(sanitizeDraw(draw)), { ex: TTL });
   return bump(s, id);
 }
 

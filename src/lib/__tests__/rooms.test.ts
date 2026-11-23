@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { roomStore } from "../server/store";
-import { RoomError, clearResult, createRoom, join, publicState, remove, roomByCode, setOpen, start, submitResult, syncHost } from "../server/rooms";
+import { RoomError, clearResult, createRoom, join, publicState, remove, roomByCode, setDraw, setOpen, start, submitResult, syncHost } from "../server/rooms";
 import { buildMatches } from "../tournament/engine";
 import { DEFAULT_CLUB_POOL, snapshotOf } from "../teams";
 import type { Tournament } from "../types";
@@ -275,5 +275,63 @@ describe("salas: resultados", () => {
     const st = (await publicState(s, r.id, v0)) as { version: number; tournament: Tournament };
     expect(st.version).toBeGreaterThan(v0);
     expect(st.tournament).toBeTruthy();
+  });
+});
+
+describe("salas: sorteo en directo", () => {
+  async function drawState(mode: "roulette" | "envelopes" | "machine" | "draft" | "pots") {
+    const { initDraw } = await import("../draw");
+    const { buildDrawBroadcast } = await import("../drawBroadcast");
+    const t = { ...playing(["Ana", "Beto", "Caro", "Dani"], "league"), phase: "draw" as const, matches: [] };
+    return buildDrawBroadcast({ ...t, draw: initDraw(t, mode, mode === "pots" ? { method: "rating" } : undefined) })!;
+  }
+
+  it("el host publica el sorteo y todos lo ven en el estado público; los invitados no pueden publicarlo", async () => {
+    const s = store();
+    const r = await createRoom(s, { name: "Copa", max: 4 });
+    const g = await join(s, r.id, "Ana");
+    const d = await drawState("roulette");
+    await expectError(setDraw(s, r.id, g.memberToken, d), "forbidden");
+    await expectError(setDraw(s, r.id, undefined, d), "unauthorized");
+    const v0 = ((await publicState(s, r.id)) as { version: number }).version;
+    await setDraw(s, r.id, r.hostToken, d);
+    const st = (await publicState(s, r.id, v0)) as { draw: { mode: string; id: string; pending: unknown; cursor: number } | null; version: number };
+    expect(st.version).toBeGreaterThan(v0);
+    expect(st.draw?.mode).toBe("roulette");
+    expect(st.draw?.id).toBe(d.id);
+    // Cada cambio del host (turno decidido, asignación) llega con una versión nueva.
+    const withPending = { ...d, pending: { participantId: d.order[0], teamId: d.pool[0], at: 5 } };
+    await setDraw(s, r.id, r.hostToken, withPending);
+    expect(((await publicState(s, r.id)) as { draw: { pending: { teamId: string } } }).draw.pending.teamId).toBe(d.pool[0]);
+  });
+
+  it("acepta el estado de las cinco mecánicas y rechaza datos mal formados", async () => {
+    const s = store();
+    const r = await createRoom(s, { name: "Copa", max: 4 });
+    for (const m of ["roulette", "envelopes", "machine", "draft", "pots"] as const) await setDraw(s, r.id, r.hostToken, await drawState(m));
+    const ok = await drawState("roulette");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, mode: "otra" }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, edition: "FC99" }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, pool: new Array(900).fill("x") }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, order: [1, 2] }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, participants: "no" }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, assignments: { p0: 5 } }), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, "texto"), "invalid");
+    await expectError(setDraw(s, r.id, r.hostToken, { ...ok, junk: "x".repeat(100_000) }), "invalid");
+  });
+
+  it("borrar el sorteo lo quita; al iniciar el torneo desaparece y ya no se puede publicar", async () => {
+    const s = store();
+    const r = await createRoom(s, { name: "Copa", max: 4 });
+    await join(s, r.id, "Ana");
+    await join(s, r.id, "Beto");
+    await setDraw(s, r.id, r.hostToken, await drawState("draft"));
+    expect(((await publicState(s, r.id)) as { draw: unknown }).draw).not.toBeNull();
+    await setDraw(s, r.id, r.hostToken, null);
+    expect(((await publicState(s, r.id)) as { draw: unknown }).draw).toBeNull();
+    await setDraw(s, r.id, r.hostToken, await drawState("machine"));
+    await start(s, r.id, r.hostToken, playing(["Ana", "Beto"]));
+    expect(((await publicState(s, r.id)) as { draw: unknown; started: boolean }).draw).toBeNull();
+    await expectError(setDraw(s, r.id, r.hostToken, await drawState("machine")), "started");
   });
 });

@@ -9,8 +9,8 @@ import type { RoomPublic } from "./roomTypes";
  * responda "sin cambios" (sin reenviar el torneo) y espacia los intentos si hay errores.
  * Devuelve una función para forzar una consulta inmediata.
  */
-export function useRoomPoll(roomId: string | null | undefined, onData: (room: RoomPublic) => void, opts: { intervalMs?: number; enabled?: boolean } = {}) {
-  const { intervalMs = 3000, enabled = true } = opts;
+export function useRoomPoll(roomId: string | null | undefined, onData: (room: RoomPublic) => void, opts: { intervalMs?: number; enabled?: boolean; adaptive?: boolean } = {}) {
+  const { intervalMs = 3000, enabled = true, adaptive = true } = opts;
   const cb = useRef(onData);
   cb.current = onData;
   const version = useRef<number | undefined>(undefined);
@@ -38,7 +38,7 @@ export function useRoomPoll(roomId: string | null | undefined, onData: (room: Ro
           } else quiet = Math.min(quiet + 1, 8);
         } else fails = Math.min(fails + 1, 5);
       }
-      timer = setTimeout(tick, intervalMs * (1 + fails) * (1 + Math.min(2, Math.floor(quiet / 4))));
+      timer = setTimeout(tick, intervalMs * (1 + fails) * (adaptive ? 1 + Math.min(2, Math.floor(quiet / 4)) : 1));
     };
     nudge.current = () => {
       if (timer) clearTimeout(timer);
@@ -54,7 +54,7 @@ export function useRoomPoll(roomId: string | null | undefined, onData: (room: Ro
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [roomId, enabled, intervalMs]);
+  }, [roomId, enabled, intervalMs, adaptive]);
 
   return () => nudge.current();
 }

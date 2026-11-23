@@ -1,4 +1,4 @@
-import type { RoomErrorCode, RoomPublic } from "./roomTypes";
+import type { DrawBroadcast, RoomErrorCode, RoomPublic } from "./roomTypes";
 import type { Tournament } from "./types";
 import type { ResultInput } from "./tournament/match";
 
@@ -69,6 +69,7 @@ function hostCall<T>(id: string, action: string, body: unknown) {
 export const hostSetOpen = (id: string, open: boolean) => hostCall<{ version: number }>(id, "close", { open });
 export const hostSync = (id: string, names: string[], max: number) => hostCall<{ conflicts: string[]; version: number }>(id, "sync", { names, max });
 export const hostRemove = (id: string, name: string) => hostCall<{ version: number }>(id, "remove", { name });
+export const hostDraw = (id: string, draw: DrawBroadcast | null) => hostCall<{ version: number }>(id, "draw", { draw });
 export const hostStart = (id: string, tournament: Tournament) => hostCall<{ version: number }>(id, "start", { tournament });
 export const hostResult = (id: string, matchId: string, result: ResultInput) => hostCall<{ version: number; tournament: Tournament }>(id, "result", { matchId, result });
 export const hostClear = (id: string, matchId: string) => hostCall<{ version: number; tournament: Tournament }>(id, "clear", { matchId });

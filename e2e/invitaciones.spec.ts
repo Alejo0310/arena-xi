@@ -1,10 +1,19 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { chooseMode, clickCentered, fullDraw } from "./helpers";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chooseMode, clickCentered, fullDraw, startTurn } from "./helpers";
 
 /*
  * Invitaciones por QR y código. El servidor de pruebas usa un Redis en memoria (ARENA_KV_MEMORY=1) con exactamente las
  * mismas operaciones que Upstash. Cada invitado es un contexto de navegador distinto (su propio almacenamiento local).
  */
+
+/** El cliente HTTP de Playwright reutiliza conexiones que el servidor local puede haber cerrado (ECONNRESET): se reintenta una vez. */
+function retrying(r: APIRequestContext) {
+  const again = <T,>(fn: () => Promise<T>) => fn().catch(() => fn());
+  return {
+    get: (url: string, o?: Parameters<APIRequestContext["get"]>[1]) => again(() => r.get(url, o)),
+    post: (url: string, o?: Parameters<APIRequestContext["post"]>[1]) => again(() => r.post(url, o)),
+  };
+}
 
 const base = () => test.info().project.use.baseURL ?? "http://localhost:3100";
 async function guestContext(browser: Browser): Promise<BrowserContext> {
@@ -109,7 +118,8 @@ test.describe("invitaciones: QR y código", () => {
     await expect(page.getByTestId("join-error")).toBeVisible();
   });
 
-  test("el cupo se respeta con inscripciones simultáneas (API real)", async ({ request }) => {
+  test("el cupo se respeta con inscripciones simultáneas (API real)", async ({ request: rawRequest }) => {
+    const request = retrying(rawRequest);
     const created = await (await request.post("/api/sala", { data: { name: "Cupo", max: 4 } })).json();
     const results = await Promise.all(Array.from({ length: 14 }, (_, i) => request.post(`/api/sala/${created.id}/join`, { data: { name: `Jugador ${i}` } })));
     const codes = results.map((r) => r.status());
@@ -123,7 +133,8 @@ test.describe("invitaciones: QR y código", () => {
     expect(r2.filter((r) => r.status() === 200)).toHaveLength(1);
   });
 
-  test("las credenciales de Redis y los tokens no llegan al navegador", async ({ page, request }) => {
+  test("las credenciales de Redis y los tokens no llegan al navegador", async ({ page, request: rawRequest }) => {
+    const request = retrying(rawRequest);
     const created = await (await request.post("/api/sala", { data: { name: "Secreto", max: 4 } })).json();
     const guest = await (await request.post(`/api/sala/${created.id}/join`, { data: { name: "Ana" } })).json();
     const state = JSON.stringify(await (await request.get(`/api/sala/${created.id}`)).json());
@@ -143,7 +154,8 @@ test.describe("invitaciones: QR y código", () => {
 });
 
 test.describe("invitaciones: permisos y resultados", () => {
-  test("solo el host inicia; tras iniciar se cierran las inscripciones y los invitados registran resultados", async ({ page, browser, request }) => {
+  test("solo el host inicia; tras iniciar se cierran las inscripciones y los invitados registran resultados", async ({ page, browser, request: rawRequest }) => {
+    const request = retrying(rawRequest);
     test.setTimeout(240_000);
     const { code, url } = await hostCreatesInvitation(page, ["Host Uno"]);
     const g1 = await guestContext(browser);
@@ -252,6 +264,86 @@ test.describe("invitaciones: permisos y resultados", () => {
     const cur = await page.evaluate(() => JSON.parse(localStorage.getItem("arena-xi")!).state.current);
     expect(cur.room).toBeUndefined();
     expect(cur.participants).toHaveLength(3);
+  });
+});
+
+test.describe("invitaciones: sorteo en directo", () => {
+  test("los invitados ven el sorteo del host, cada revelación y el aviso de esperar al host", async ({ page, browser, request: rawRequest }) => {
+    const request = retrying(rawRequest);
+    test.setTimeout(240_000);
+    const { code, url } = await hostCreatesInvitation(page, ["Host Uno"]);
+    const g1 = await guestContext(browser);
+    const p1 = await joinWith(g1, url, "Ana Invitada");
+    await expect(p1.getByTestId("join-success")).toBeVisible();
+    const g2 = await guestContext(browser);
+    const p2 = await joinWith(g2, url, "Beto Invitado");
+    await expect(p2.getByTestId("join-success")).toBeVisible();
+    await expect(page.getByTestId("invite-count")).toHaveText("3", { timeout: 15_000 });
+    const roomId = (await (await request.get(`/api/sala/codigo/${code}`)).json()).id as string;
+
+    // Los invitados abren la vista del torneo: antes del sorteo ven la sala de espera.
+    await p1.goto(`/sala/${roomId}`);
+    await p2.goto(`/sala/${roomId}`);
+    await expect(p1.getByTestId("room-lobby")).toBeVisible();
+
+    // El host pasa al sorteo (se cierran las inscripciones) y elige la ruleta.
+    await clickCentered(page.getByRole("button", { name: /Ir al sorteo/ }));
+    await expect(page).toHaveURL(/\/sorteo/);
+    await expect(p1.getByTestId("room-lobby")).toContainText(/preparando el sorteo/i, { timeout: 15_000 });
+    await chooseMode(page, "Ruleta");
+
+    // Los invitados ven el mismo turno y la misma ruleta, sin controles.
+    const turn = (await page.getByTestId("turn-name").textContent())!.trim();
+    for (const g of [p1, p2]) {
+      await expect(g.getByTestId("spectator-draw")).toHaveAttribute("data-draw-mode", "roulette", { timeout: 15_000 });
+      await expect(g.getByTestId("spectator-turn-name")).toHaveText(turn);
+      await expect(g.getByTestId("spectator-stage")).toBeVisible();
+      await expect(g.getByTestId("draw-action")).toBeDisabled(); // sin controles para los invitados
+    }
+
+    if (process.env.E2E_SHOTS) await p1.screenshot({ path: `${process.env.E2E_SHOTS}/guest-stage-${test.info().project.name}.png`, fullPage: true });
+    // El host gira: el invitado ve la revelación del mismo equipo.
+    await startTurn(page, "Ruleta");
+    const hostDialog = page.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
+    await expect(hostDialog).toBeVisible({ timeout: 20_000 });
+    const team = (await hostDialog.getByTestId("reveal-team").textContent())!.trim();
+    await expect(hostDialog.getByRole("button", { name: "Continuar" })).toBeVisible({ timeout: 10_000 });
+    for (const g of [p1, p2]) {
+      const d = g.getByRole("dialog", { name: new RegExp(`^${turn} recibe`) });
+      await expect(d).toBeVisible({ timeout: 20_000 });
+      await expect(d.getByTestId("reveal-team")).toHaveText(team);
+      await expect(d.getByRole("button", { name: "Continuar" })).toHaveCount(0); // solo el host continúa
+    }
+    // Sin desbordes horizontales en el móvil durante la revelación y con la lista visible.
+    const hostOrder = page.locator("ol[aria-label='Orden del sorteo'] li");
+    expect(await hostOrder.count()).toBe(3);
+    await hostDialog.getByRole("button", { name: "Continuar" }).click();
+    for (const g of [p1, p2]) {
+      await expect(g.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
+      await expect(g.getByTestId("spectator-order").locator("li[data-assigned='true']")).toHaveCount(1, { timeout: 15_000 });
+      const over = await g.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(over).toBeLessThanOrEqual(1);
+    }
+    if (process.env.E2E_SHOTS) await p1.screenshot({ path: `${process.env.E2E_SHOTS}/guest-reveal-${test.info().project.name}.png` });
+
+    // El host termina con "Sorteo completo": los invitados ven que todos tienen equipo y esperan al host.
+    await fullDraw(page);
+    for (const g of [p1, p2]) {
+      await expect(g.getByTestId("spectator-waiting")).toContainText(/esperando a que el organizador inicie el torneo/i, { timeout: 20_000 });
+      await expect(g.getByTestId("spectator-order").locator("li[data-assigned='true']")).toHaveCount(3);
+      const over = await g.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(over).toBeLessThanOrEqual(1);
+    }
+    if (process.env.E2E_SHOTS) await p1.screenshot({ path: `${process.env.E2E_SHOTS}/guest-waiting-${test.info().project.name}.png`, fullPage: true });
+
+    // El host inicia el torneo y los invitados pasan a ver los partidos.
+    await page.getByRole("button", { name: /Comenzar torneo/ }).click();
+    await expect(page).toHaveURL(/\/torneo/);
+    for (const g of [p1, p2]) {
+      await expect(g.getByTestId("spectator-draw")).toHaveCount(0, { timeout: 20_000 });
+      await expect(g.getByRole("tab", { name: /Calendario/ })).toBeVisible({ timeout: 20_000 });
+    }
+    for (const c of [g1, g2]) await c.close();
   });
 });
 

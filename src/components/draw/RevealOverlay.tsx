@@ -24,6 +24,8 @@ interface Props extends RevealItem {
   onRevealed: (runId: number) => void;
   onContinue: () => void;
   onSkip?: () => void;
+  /** Pantalla de un invitado que mira el sorteo del host: sin botón de continuar. */
+  spectator?: boolean;
 }
 
 /**
@@ -31,7 +33,7 @@ interface Props extends RevealItem {
  * encadena con promesas de Motion y avisa al terminar (`onRevealed`); el botón
  * Continuar solo existe en el estado "assigned". Sin temporizadores.
  */
-export function RevealOverlay({ participant, team, stage, runId, position, continueLabel, onRevealed, onContinue, onSkip }: Props) {
+export function RevealOverlay({ participant, team, stage, runId, position, continueLabel, onRevealed, onContinue, onSkip, spectator }: Props) {
   const [scope, animate] = useAnimate<HTMLDivElement>();
   const revealedRef = useRef(onRevealed);
   revealedRef.current = onRevealed;
@@ -119,7 +121,12 @@ export function RevealOverlay({ participant, team, stage, runId, position, conti
         </div>
 
         <div className="mt-8 flex h-12 items-center gap-3">
-          {stage === "assigned" && (
+          {stage === "assigned" && spectator && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm font-semibold uppercase tracking-widest text-mute" data-testid="reveal-waiting">
+              Esperando a que continúe el organizador…
+            </motion.p>
+          )}
+          {stage === "assigned" && !spectator && (
             <motion.button
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}

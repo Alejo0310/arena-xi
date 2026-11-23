@@ -13,6 +13,7 @@ import { roomErrorText } from "@/lib/roomSync";
 import { useRoomPoll } from "@/lib/useRoomPoll";
 import { ID_RE } from "@/lib/roomIds";
 import { setActiveSnapshot } from "@/lib/teams";
+import { SpectatorDraw } from "@/components/invite/SpectatorDraw";
 import type { RoomPublic } from "@/lib/roomTypes";
 import type { Tournament } from "@/lib/types";
 
@@ -31,10 +32,16 @@ export default function RoomPage() {
     setName(getMember(id)?.name ?? null);
   }, [id]);
 
-  useRoomPoll(valid ? id : null, (data) => {
-    setRoom(data);
-    setTournament(data.tournament);
-  });
+  // Mientras el host hace el sorteo se consulta más a menudo (sin espaciar) para ver cada giro casi en directo.
+  const live = !!room && !!room.draw && !room.started;
+  useRoomPoll(
+    valid ? id : null,
+    (data) => {
+      setRoom(data);
+      setTournament(data.tournament);
+    },
+    { intervalMs: live ? 1500 : 3000, adaptive: !live },
+  );
   // Si la sala no existe, el sondeo no devuelve datos: se marca como no encontrada tras unos segundos.
   useEffect(() => {
     if (!valid) return;
@@ -86,7 +93,7 @@ export default function RoomPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <div className="kicker mb-1.5 flex items-center gap-2"><Radio className="size-3.5 animate-pulse text-neon" /> En vivo · {room.started ? "En juego" : "Inscripciones"}</div>
+          <div className="kicker mb-1.5 flex items-center gap-2"><Radio className="size-3.5 animate-pulse text-neon" /> En vivo · {room.started ? "En juego" : room.draw ? "Sorteo" : "Inscripciones"}</div>
           <h1 className="display truncate text-4xl font-black italic sm:text-5xl" data-testid="room-title">{room.name}</h1>
           {room.host && <p className="mt-1 text-sm text-mute">Organiza {room.host}</p>}
         </div>
@@ -101,10 +108,12 @@ export default function RoomPage() {
         </div>
       </div>
 
-      {!room.started || !tournament ? (
+      {room.draw && !room.started ? (
+        <SpectatorDraw draw={room.draw} />
+      ) : !room.started || !tournament ? (
         <div className="glass p-6" data-testid="room-lobby">
-          <h2 className="display text-3xl font-extrabold">Esperando a que el organizador inicie el torneo</h2>
-          <p className="mt-1 text-sm text-soft">{room.open ? "Las inscripciones siguen abiertas." : "Las inscripciones están cerradas."} Esta página se actualiza sola.</p>
+          <h2 className="display text-3xl font-extrabold">{room.open ? "Esperando a que el organizador inicie el torneo" : "El organizador está preparando el sorteo"}</h2>
+          <p className="mt-1 text-sm text-soft">{room.open ? "Las inscripciones siguen abiertas." : "Las inscripciones están cerradas."} Esta página se actualiza sola y verás el sorteo en directo.</p>
           <div className="mt-4 flex items-center gap-2 text-sm text-mute"><Users className="size-4" /> <span data-testid="room-count">{room.participants.length}</span> / {room.max} inscritos</div>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3" data-testid="room-participants">
             {room.participants.map((n) => (

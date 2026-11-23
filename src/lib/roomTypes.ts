@@ -1,4 +1,4 @@
-import type { Tournament } from "./types";
+import type { DrawMode, GameEdition, Gender, PendingPick, PotsMethod, TeamKind, Tournament } from "./types";
 
 /** Tipos compartidos entre las rutas de la API de salas y el cliente. */
 
@@ -15,6 +15,33 @@ export interface RoomMeta {
   code: string;
 }
 
+/**
+ * Estado del sorteo que el host publica para que los invitados lo vean en directo. Solo lleva ids de equipos y de
+ * participantes (los equipos se resuelven con el catálogo de la edición), por lo que es pequeño.
+ */
+export interface DrawBroadcast {
+  /** Identificador de la sesión de sorteo (cambia al reiniciarlo). */
+  id: string;
+  mode: DrawMode;
+  order: string[];
+  cursor: number;
+  pool: string[];
+  /** Resultado ya decidido que se está animando / revelando en el host. */
+  pending: PendingPick | null;
+  envelopes?: (string | null)[];
+  draftOptions?: string[];
+  pots?: string[][];
+  potIndex?: number;
+  potsMethod?: PotsMethod;
+  assignments: Record<string, string>;
+  /** Sobre abierto → participante (para mostrar quién abrió cada uno). */
+  owners: Record<number, string>;
+  participants: { id: string; name: string; color: string }[];
+  edition: GameEdition;
+  category: TeamKind;
+  gender: Gender;
+}
+
 export interface RoomPublic {
   id: string;
   name: string;
@@ -26,6 +53,8 @@ export interface RoomPublic {
   participants: string[];
   /** Solo cuando el host ha iniciado el torneo. */
   tournament: Tournament | null;
+  /** Sorteo en curso (antes de que el host inicie el torneo). */
+  draw: DrawBroadcast | null;
 }
 
 export type RoomErrorCode =

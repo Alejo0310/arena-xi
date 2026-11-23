@@ -12,6 +12,8 @@ import { confirmDialog, toast } from "@/components/ui/feedback";
 import { TeamBrowser } from "@/components/teams/TeamBrowser";
 import { useCategoryChange, useEditionChange } from "@/components/teams/useCategoryChange";
 import { EditionSelector } from "@/components/teams/EditionSelector";
+import { InvitePanel } from "@/components/invite/InvitePanel";
+import { finalizeInvitations } from "@/lib/roomSync";
 import { categoryLabel, editionInfo } from "@/lib/editions";
 import { generateTournamentName, PLAYER_COLORS } from "@/lib/names";
 import { bracketSize } from "@/lib/tournament/knockout";
@@ -66,8 +68,13 @@ function SetupForm({ onDone }: { onDone: () => void }) {
   if (!t.settings.allowRepeatTeams && t.teamPool.length < n) problems.push(`Selecciona al menos ${n} equipos (hay ${t.teamPool.length}) o permite equipos repetidos.`);
   if (t.teamPool.length === 0) problems.push("Selecciona equipos para el sorteo.");
 
-  const goDraw = () => {
+  const goDraw = async () => {
     if (problems.length) return toast.error(problems[0]);
+    // Con invitaciones: lista definitiva y cierre persistente de las inscripciones antes del sorteo.
+    if (t.room) {
+      const err = await finalizeInvitations();
+      if (err) toast.error(`No se pudieron cerrar las inscripciones de la sala: ${err}`);
+    }
     onDone();
   };
 
@@ -235,6 +242,7 @@ function Participants() {
           <StructurePreview n={n} settings={t.settings} />
         </div>
       </div>
+      <InvitePanel max={target} />
     </section>
   );
 }

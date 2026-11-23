@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { motion } from "motion/react";
 import { Check, Crown, Pencil, Radio, RotateCcw, Square } from "lucide-react";
 import type { Match, Participant, Tournament } from "@/lib/types";
 import { getTeam } from "@/lib/teams";
-import { matchWinner } from "@/lib/tournament/match";
+import { matchWinner, type ResultInput } from "@/lib/tournament/match";
 import { dependentMatches } from "@/lib/tournament/knockout";
 import { useTournament } from "@/store/tournament";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,21 @@ const STATUS = {
   done: { label: "Finalizado", cls: "bg-neon/10 text-neon" },
 };
 
+/**
+ * Acciones alternativas para el registro de resultados cuando el torneo vive en una sala (servidor): sustituyen a las
+ * del almacén local. Sin este contexto, MatchCard se comporta exactamente como siempre.
+ */
+export interface MatchActions {
+  record: (matchId: string, r: ResultInput) => Promise<string | null> | string | null;
+  /** Borrar un resultado: solo el organizador. */
+  reset?: (matchId: string) => Promise<string | null> | string | null;
+  /** Ganador manual (W.O.): solo el organizador. */
+  manualWinner?: boolean;
+  /** Marcar "en juego": solo local. */
+  live?: boolean;
+}
+export const MatchActionsContext = createContext<MatchActions | null>(null);
+
 function parse(v: string): number | null {
   if (v.trim() === "") return null;
   const n = Number(v);
@@ -29,6 +44,7 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
   const record = useTournament((s) => s.recordResult);
   const reset = useTournament((s) => s.resetResult);
   const setLive = useTournament((s) => s.setLive);
+  const ctx = useContext(MatchActionsContext);
   const knockout = t.settings.format === "knockout";
   const byId = new Map(t.participants.map((p) => [p.id, p]));
   const home = m.homeId ? byId.get(m.homeId) : undefined;
@@ -86,13 +102,14 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
     const awayGoals = parse(ag);
     if (Number.isNaN(homeGoals) || Number.isNaN(awayGoals)) return toast.error("Los goles deben ser números enteros.");
     if (done && !(await warnDependents("Editar el resultado"))) return;
-    const err = record(m.id, {
+    const input: ResultInput = {
       homeGoals,
       awayGoals,
       homePens: knockout && tiedNow ? parse(hp) : null,
       awayPens: knockout && tiedNow ? parse(ap) : null,
       manualWinnerId: manualWinnerId ?? null,
-    });
+    };
+    const err = ctx ? await ctx.record(m.id, input) : record(m.id, input);
     if (err) return toast.error(err);
     play("goal");
     toast.success(done ? "Resultado actualizado." : "Resultado registrado.");
@@ -118,7 +135,8 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
     if (!(await warnDependents("Borrar el resultado"))) return;
     const ok = await confirmDialog({ title: "¿Borrar el resultado?", body: "El partido volverá a estado pendiente.", danger: true, confirmLabel: "Borrar" });
     if (ok) {
-      reset(m.id);
+      const err = ctx?.reset ? await ctx.reset(m.id) : ctx ? "Solo el organizador puede borrar resultados." : (reset(m.id), null);
+      if (err) return toast.error(err);
       toast.info("Resultado borrado.");
     }
   };
@@ -184,7 +202,7 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-line pt-3">
           {inputsOpen ? (
             <>
-              {!done && (
+              {!done && (!ctx || ctx.live) && (
                 <Button size="sm" variant="ghost" onClick={() => setLive(m.id, m.status !== "live")}>
                   {m.status === "live" ? <><Square className="size-3.5" /> Pausar</> : <><Radio className="size-3.5" /> En juego</>}
                 </Button>
@@ -192,6 +210,7 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
               <Button size="sm" onClick={() => submit()}>
                 <Check className="size-4" /> {done ? "Guardar" : "Registrar"}
               </Button>
+              {(!ctx || ctx.manualWinner) && (
               <details className="relative">
                 <summary className="flex h-9 cursor-pointer list-none items-center gap-1 rounded-lg px-3 font-display text-sm font-bold uppercase tracking-wider text-soft hover:bg-white/5 hover:text-white">
                   <Crown className="size-3.5" /> Ganador manual
@@ -204,12 +223,13 @@ export function MatchCard({ t, m, readOnly = false }: { t: Tournament; m: Match;
                   ))}
                 </div>
               </details>
+              )}
               {editing && <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>}
             </>
           ) : (
             <>
               <Button size="sm" variant="secondary" onClick={startEdit}><Pencil className="size-3.5" /> Editar</Button>
-              <Button size="sm" variant="ghost" onClick={clear}><RotateCcw className="size-3.5" /> Borrar</Button>
+              {(!ctx || ctx.reset) && <Button size="sm" variant="ghost" onClick={clear}><RotateCcw className="size-3.5" /> Borrar</Button>}
             </>
           )}
         </div>

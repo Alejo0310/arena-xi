@@ -14,6 +14,7 @@ import { Portal } from "@/components/ui/Portal";
 import { ReportExporter, type ExportJob } from "@/components/tournament/ReportExporter";
 import { downloadJson } from "@/lib/share";
 import { ShareDialog } from "@/components/tournament/ShareDialog";
+import { HostRoomBanner, HostRoomProvider } from "@/components/invite/HostRoom";
 import { PHASE_LABEL, phaseHref } from "@/lib/routes";
 import { useRouter } from "next/navigation";
 
@@ -90,8 +91,11 @@ export default function TournamentPage() {
         </div>
       </div>
 
+      <HostRoomBanner />
       <TabBar t={t} tab={tab} setTab={setTab} />
-      <TournamentBody ref={bodyRef} t={t} tab={tab} onReplayChampion={() => setCelebrate(true)} />
+      <HostRoomProvider>
+        <TournamentBody ref={bodyRef} t={t} tab={tab} onReplayChampion={() => setCelebrate(true)} />
+      </HostRoomProvider>
 
       <ReportExporter t={t} job={job} onDone={() => setJob(null)} />
       <ShareDialog t={t} open={sharing} onClose={() => setSharing(false)} />

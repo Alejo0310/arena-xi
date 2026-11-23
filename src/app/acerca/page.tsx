@@ -111,6 +111,7 @@ export default function AboutPage() {
         </ul>
         <p>El <b className="text-white">enlace largo</b> para compartir lleva el torneo comprimido en el fragmento (#) de la URL, que el navegador no envía a ningún servidor.</p>
         <p>El <b className="text-white">enlace corto</b> (por ejemplo, <code>/compartir#NombreDelTorneo-k7x9q2</code>) es la única excepción: al crearlo, el torneo (participantes, equipos, resultados y nombre) se guarda en una base de datos del servidor durante un año para poder abrirlo. No se guardan cuentas, correos ni datos personales más allá de lo que escribas en el torneo, y nadie puede listar los enlaces: solo abre el que conoce su dirección.</p>
+        <p>Las <b className="text-white">invitaciones por QR o código</b> son otra excepción: al generarlas, el nombre del torneo y los nombres que escriban los invitados se guardan en la misma base de datos durante 30 días, junto con el torneo iniciado y sus resultados para poder consultarlos y registrarlos entre todos. Los permisos se guardan como huellas (hash) y los secretos solo existen en el navegador de cada persona.</p>
         <p>Para borrar tus datos locales, elimina los torneos en el Historial o borra los datos del sitio en tu navegador. Si quieres que se elimine un enlace corto, pídelo abriendo una incidencia en GitHub indicando el enlace.</p>
         <p>Esto no es una política de privacidad jurídica completa; describe lo que el código hace hoy. Si cambia, se actualizará aquí.</p>
       </Section>

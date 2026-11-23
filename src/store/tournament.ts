@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import type { RoomLink } from "@/lib/roomTypes";
 import type { DrawMode, PotsConfig, GameEdition, Gender, Participant, PendingPick, Team, TeamKind, Tournament, TournamentSettings } from "@/lib/types";
 import { uid } from "@/lib/random";
 import { defaultPool, getTeam, setActiveSnapshot, snapshotOf } from "@/lib/teams";
@@ -91,6 +92,12 @@ interface State {
   deleteFromHistory: (id: string) => void;
   importTournament: (t: unknown) => Err;
   toggleSound: () => void;
+
+  /** Sala de invitaciones (QR / código) del torneo actual. No contiene secretos. */
+  setRoom: (room: RoomLink | null) => void;
+  patchRoom: (patch: Partial<RoomLink>) => void;
+  /** Aplica el estado de la sala (resultados registrados por otros) al torneo del host. */
+  applyRemote: (remote: Tournament, version: number) => void;
 }
 
 function nameError(name: string, participants: Participant[], exceptId?: string): Err {
@@ -364,6 +371,34 @@ export const useTournament = create<State>()(
           if (err) return `El torneo importado no es válido: ${err}`;
           set({ current: t, history: archive(get().history, get().current) });
           return null;
+        },
+
+        setRoom: (room) => {
+          const t = get().current;
+          if (!t) return;
+          set({ current: { ...t, room: room ?? undefined, updatedAt: Date.now() } });
+        },
+
+        patchRoom: (patch) => {
+          const t = get().current;
+          if (!t?.room) return;
+          set({ current: { ...t, room: { ...t.room, ...patch } } });
+        },
+
+        applyRemote: (remote, version) => {
+          const t = get().current;
+          if (!t?.room) return;
+          set({
+            current: {
+              ...t,
+              matches: remote.matches,
+              championId: remote.championId,
+              phase: remote.phase,
+              finishedAt: remote.finishedAt,
+              updatedAt: Date.now(),
+              room: { ...t.room, version, published: true },
+            },
+          });
         },
 
         toggleSound: () => {

@@ -79,6 +79,17 @@ READY ─START─▶ SPINNING ─fin de animación─▶ REVEALING ─fin de rev
 - **Simulaciones** de las 5 modalidades en el Home (independientes de los torneos reales), página `/acerca` y **footer** con enlaces a funcionalidades existentes.
 - Pruebas: `npm test` (Vitest, pool `vmThreads`) y `npm run e2e`.
 
+## Invitaciones por QR y código (salas)
+
+El host puede pulsar **Invitar participantes** en el paso 3 de la configuración: se genera un QR (enlace `/unirse/<código>`) y un código de 6 dígitos. Cada jugador escribe su nombre desde su móvil y queda inscrito; el registro manual sigue igual y ambos coexisten sin duplicados.
+
+- **Persistencia:** Upstash Redis (misma conexión REST y mismas variables que los enlaces cortos: `KV_REST_API_URL`, `KV_REST_API_TOKEN`). Sin esas variables la función no se activa y el resto de la app no cambia. `ARENA_KV_MEMORY=1` activa un almacén en memoria **solo** para pruebas y desarrollo local.
+- **Claves** (caducan a los 30 días): `invitation:code:{código}` → id de sala; `room:{id}:meta`, `:host` (hash SHA-256 del token), `:participants` (hash nombre→datos), `:members` (hash SHA-256 de token de invitado→nombre), `:count` (cupo atómico), `:started`, `:tournament`, `:ver`, `:lock`.
+- **Permisos:** el torneo y el sorteo siguen en el navegador del host. Al crear la sala el servidor entrega un token secreto (solo se guarda su hash). Solo el token del host puede cerrar/abrir inscripciones, sincronizar la lista, expulsar, **iniciar** (publicar) el torneo y borrar resultados. Los invitados reciben su propio token al inscribirse y solo pueden registrar o actualizar resultados una vez iniciado el torneo. Todo se valida en el servidor; los tokens van en la cabecera `Authorization` y nunca en el QR, la URL, el JSON ni los enlaces para compartir. Si el host pierde los datos de su navegador pierde el control de esa sala.
+- **Consistencia:** nombres únicos con `HSETNX`; cupo exacto con `INCR` (con reversión); el inicio pone una bandera antes de leer la lista, así que nadie puede colarse; los resultados se aplican en el servidor con el motor real (`recordResult`) bajo un cerrojo corto.
+- **Actualización en vivo:** sondeo con `?since=<versión>` (una sola lectura cuando no hay cambios) y espaciado adaptativo; sin WebSockets.
+- Páginas: `/unirse` (código), `/unirse/<código>` (registro), `/sala/<id>` (vista en vivo para invitados).
+
 ## Clubes y selecciones
 
 Un torneo es **de clubes** o **de selecciones**, nunca mixto. La regla vive en [`src/lib/category.ts`](src/lib/category.ts) y la aplican todas las capas: el store (pool, cambio de categoría, importación y datos guardados), la lógica de sorteo (`decidePick`, `validateAssignments`) y el motor del torneo (`buildMatches`, `recordResult`). Un estado manipulado a mano que mezcle categorías no se puede sortear, iniciar ni puntuar. Cambiar de categoría con un sorteo en curso pide confirmación y reinicia el sorteo.

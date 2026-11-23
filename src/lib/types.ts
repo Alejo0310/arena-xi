@@ -1,3 +1,4 @@
+import type { RoomLink } from "./roomTypes";
 // Tipos de dominio compartidos por la lógica del torneo, el sorteo y la UI.
 
 export type TournamentFormat = "league" | "knockout";
@@ -171,6 +172,8 @@ export interface Tournament {
   phase: Phase;
   settings: TournamentSettings;
   participants: Participant[];
+  /** Sala de invitación (QR / código) vinculada a este torneo. Nunca contiene secretos. */
+  room?: RoomLink;
   /** Equipos habilitados para el sorteo. */
   teamPool: string[];
   /**

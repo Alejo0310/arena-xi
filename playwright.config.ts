@@ -18,5 +18,5 @@ export default defineConfig({
   ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
-    : { command: `npx next start -p ${PORT}`, port: PORT, reuseExistingServer: true, timeout: 120_000 },
+    : { command: `npx next start -p ${PORT}`, port: PORT, reuseExistingServer: true, timeout: 120_000, env: { ARENA_KV_MEMORY: "1" } }, // Redis en memoria solo para las pruebas de invitaciones
 });
